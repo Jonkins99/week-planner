@@ -224,3 +224,61 @@ npm run build
 ```
 
 (`npm install` ist nicht nötig.) Danach `docs/` committen und pushen.
+
+
+
+== 
+
+Mein Handy meldet weiter "Diese App wurde bereits installiert". Ich vermute den Konflikt mit "JH Draft League". Es muss im nächsten Anlauf funktionieren!
+
+---
+
+## Status Runde 5 (Claude)
+
+Neu: **week-planner-3.zip** (nur die Änderungen seit week-planner-2.zip).
+
+**Was ich geprüft habe:** Ich habe die öffentlichen Seiten abgerufen (nur lesend). Track a Snack läuft gar nicht unter jonkins99.github.io, meine Vermutung aus Runde 4 war also falsch. Die Week-Planner-Seite liefert bereits das Manifest mit der neuen ID aus. Die JH Draft League hat dagegen ein unvollständiges Manifest: keine `start_url`, kein `scope`, keine `id`, und die Icon-Pfade beginnen mit `/` und zeigen damit auf `https://jonkins99.github.io/web-app-manifest-192x192.png` (404). Je nachdem, von welcher Adresse und mit welcher Chrome-Version sie installiert wurde, kann Android ihr einen Bereich gegeben haben, der den Week Planner mit abdeckt. Dann meldet Chrome für jede Seite in diesem Bereich „bereits installiert". Von hier aus kann ich das auf deinem Handy nicht nachprüfen.
+
+**Änderungen im Week Planner (gegen jede Art von Kollision):**
+- Manifest-Datei umbenannt: `week-planner.webmanifest` (neue Manifest-Adresse, falls Android ältere Installationen daran erkennt).
+- Feste, absolute ID `/week-planner/app`, die mit nichts anderem auf der Domain übereinstimmen kann.
+- Neue Start-Adresse `./?pwa=1`, Bereich bleibt auf den eigenen Ordner begrenzt.
+- Service-Worker-Cache auf v3, damit das Handy sofort alles neu lädt.
+
+**Wichtig beim Entpacken auf dem anderen Laptop:** Die alte Datei `public/manifest.webmanifest` muss gelöscht werden, sonst landet sie weiter im Build (die ZIP kann nichts löschen).
+
+```bash
+rm public/manifest.webmanifest
+npm run build
+```
+
+Danach `docs/` committen und pushen (in `docs/` verschwindet die alte `manifest.webmanifest` durch den Build automatisch).
+
+**Auf dem Handy, damit es diesmal sicher klappt (in dieser Reihenfolge):**
+1. In Chrome `chrome://webapks` öffnen. Dort stehen alle als echte App installierten Seiten mit „Scope" und „Manifest Id". Prüfen, ob ein Eintrag (z. B. JH Draft League oder ein alter Week Planner) als Scope nur `https://jonkins99.github.io/` hat oder ob es schon einen „Week Planner" gibt.
+2. Gibt es einen alten Week-Planner-Eintrag: diese App deinstallieren (lange auf das Icon drücken → Deinstallieren, bzw. Android-Einstellungen → Apps).
+3. Hat die JH Draft League den Scope `https://jonkins99.github.io/`: Sie ist der Blocker. Dann die JH Draft League kurz deinstallieren, den Week Planner installieren und danach die JH Draft League mit dem korrigierten Manifest (siehe unten) wieder installieren.
+4. `https://jonkins99.github.io/week-planner/` in Chrome öffnen, einmal neu laden, dann im Menü „App installieren" wählen (nicht „Zum Startbildschirm hinzufügen").
+
+Falls es danach immer noch nicht klappt: bitte den Inhalt von `chrome://webapks` (die Einträge zu jonkins99.github.io) hier unten in die task.md kopieren, dann sehe ich genau, was blockiert.
+
+**Empfehlung für die JH Draft League** (anderes Projekt, dort habe ich nichts geändert): Im `site.webmanifest` diese Felder ergänzen bzw. korrigieren. Die Pfade sind relativ zur Manifest-Datei, die nach dem Build in `assets/` liegt:
+
+```json
+{
+  "id": "/jh-draft-league/app",
+  "name": "JH Draft League",
+  "short_name": "JH Draft League",
+  "start_url": "../",
+  "scope": "../",
+  "display": "standalone",
+  "theme_color": "#ffffff",
+  "background_color": "#ffffff",
+  "icons": [
+    { "src": "../web-app-manifest-192x192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "../web-app-manifest-512x512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
+```
+
+Die beiden PNGs müssen dafür im ausgelieferten Wurzelordner der JH Draft League liegen (bei Vite also in `public/`). Damit beansprucht die Liga nur noch ihren eigenen Ordner.

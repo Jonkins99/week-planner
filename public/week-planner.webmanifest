@@ -1,10 +1,10 @@
 {
-  "id": "week-planner",
+  "id": "/week-planner/app",
   "name": "Week Planner",
   "short_name": "Week Planner",
   "description": "Wochenplan, Rezepte, Einkauf und Vorrat für zu Hause.",
   "lang": "de",
-  "start_url": "./?source=pwa",
+  "start_url": "./?pwa=1",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
