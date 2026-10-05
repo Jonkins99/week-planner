@@ -195,3 +195,32 @@ npm run build
 ```
 
 Danach `docs/` committen und pushen. (`npm install` ist diesmal nötig, weil `fflate` für die ZIP-Sicherung dazugekommen ist.)
+
+
+==== 
+
+Runde 4, bitte in die -2.zip, die dann auch nur die angepassten Dateien enthalten soll:
+
+- Es schlägt derzeit fehl, dass ich die App als Shortcut auf meinem Home Bildschirm installieren kann. Das System denkt die App gibt es bereits, vermutlich weil über den gleichen github account schon eine andere app läuft (beides unter der gleichen URL bis auf nach den /). Sorge dafür, dass es trotz der größtenteils gleichen URL beides installiert werden kann, und zwar nicht als chrome-verknüpfung sondern eigenständige app
+
+---
+
+## Status Runde 4 (Claude)
+
+Neu: **week-planner-2.zip** (nur die geänderten Dateien, Pfade wie im Projekt; einfach über den bestehenden Stand entpacken und überschreiben).
+
+**Ursache:** Auf derselben github.io-Adresse läuft „Track a Snack" mit `"start_url": "/"`. Für Android ist die Identität einer Web-App ihre Manifest-ID; ohne eigene ID wird sie aus der Start-Adresse gebildet, und die Week-Planner-ID `"./"` wurde gegen den Domain-Stamm aufgelöst. Beide Apps hatten damit dieselbe ID `https://<name>.github.io/`, deshalb meldete Android „gibt es schon".
+
+**Lösung:** Der Week Planner hat jetzt eine feste, eigene ID (`"id": "week-planner"`), dazu eine eindeutige Start-Adresse (`./?source=pwa`) und einen eigenen Bereich (`scope: ./`). Der Service Worker hat einen neuen Cache-Namen, damit Geräte das neue Manifest sofort laden.
+
+**Danach auf dem Handy:** Seite in Chrome einmal neu laden (ggf. zweimal, damit der neue Service Worker übernimmt), dann über das Menü „App installieren" wählen. Sollte schon eine alte Verknüpfung auf dem Home-Bildschirm liegen, diese vorher entfernen.
+
+**Empfehlung für Track a Snack** (nicht Teil dieses Projekts, nichts geändert): Dort im `manifest.json` ebenfalls eine eigene ID setzen und den Bereich auf den eigenen Unterordner begrenzen, also `"id": "track-a-snack"`, `"start_url": "./"`, `"scope": "./"`. Mit `start_url: "/"` beansprucht die App sonst die ganze Domain und kann auch bei künftigen Apps Ärger machen. Achtung: Eine bereits installierte Track-a-Snack-App muss danach einmal neu installiert werden.
+
+**Befehle auf dem anderen Laptop:**
+
+```bash
+npm run build
+```
+
+(`npm install` ist nicht nötig.) Danach `docs/` committen und pushen.
