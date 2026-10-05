@@ -1,0 +1,938 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <title>Week Planner</title>
+  <meta name="description" content="Wochenplan, Rezepte, Einkauf und Vorrat für zu Hause.">
+  <meta name="theme-color" content="#1D3A8F">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Week Planner">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" type="image/svg+xml" href="./icons/logo.svg">
+  <link rel="icon" type="image/png" sizes="48x48" href="./icons/favicon-48.png">
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+  <style>
+    html, body { background: #e7ecf3; color: #14203f; margin: 0; }
+    @media (prefers-color-scheme: dark) { html, body { background: #0d1322; color: #eef2fb; } }
+    [x-cloak] { display: none !important; }
+  </style>
+  <link rel="stylesheet" href="./resources/css/app.css">
+  <script type="module" src="./resources/js/main.js"></script>
+</head>
+<body x-data="app" :class="{ 'has-layer': layers.some(l => l !== 'menu' && l !== 'detail'), 'is-composing': shopFocus && (tab === 'shop' || tab === 'pantry'), 'on-shop': tab === 'shop' || tab === 'pantry' }">
+<!--
+THESIS: Ein Haushalts-Küchenbuch im Emaille-Geschirr: weiße Teller mit Kobaltrand statt generischer Karten-Dashboards.
+OWN-WORLD: Porzellan-Grund, emaillierte Teller (2px Kobaltrand, 16px Radius), Emailleschild-Fußleiste in Kobalt, Mahlzeit-Farben Safran / Jade / Kobalt, Tomate für Aktionen; Archivo schmal-fett für Schildschrift, normalbreit für Text.
+STORY: Woche aufschlagen, Gerichte per Textfeld mit Vorschlägen eintragen, per Halten verschieben, per WhatsApp teilen; Rezepte sammeln, bewerten, per KI importieren.
+FIRST VIEWPORT: Emailleschild mit KW-Nummer groß, Wochenbereich, Pfeile; darunter der heutige Teller mit Frühstück/Mittag/Abend; Fußleiste mit vier Reitern.
+FORM: Emaille-Küchengeschirr, Kandidat 4 von 7, Seed 18c16290.
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
+-->
+<div class="gate" x-cloak x-show="locked">
+  <form class="gate-card" @submit.prevent="unlock()">
+    <img class="gate-logo" src="./icons/logo.svg" alt="" width="88" height="88">
+    <h1 class="gate-title">Week Planner</h1>
+    <p class="gate-text">Bitte einmal das Passwort eingeben. Danach bleibt dieses Gerät freigeschaltet.</p>
+    <label class="gate-field">
+      <span x-icon="'lock'"></span>
+      <input type="password" x-model="auth.pw" @input="auth.error = ''" placeholder="Passwort" autocomplete="current-password" autofocus aria-label="Passwort">
+    </label>
+    <p class="field-error" x-show="auth.error" x-text="auth.error" role="alert"></p>
+    <button class="btn btn--primary btn--wide" type="submit" :disabled="!auth.pw || auth.busy"><span x-icon="'check'"></span>Öffnen</button>
+  </form>
+</div>
+<div class="shell" x-cloak x-show="ready && !locked">
+  <main class="views">
+
+    <!-- ============================================================ WOCHENPLAN -->
+    <section class="view" :class="{ 'is-active': tab === 'plan' }" :inert="tab !== 'plan'" x-ref="planView" aria-label="Wochenplan">
+      <header class="sign">
+        <div class="sign-row sign-row--week">
+          <button class="sign-tool" @click="exportWeek()" aria-label="Wochenplan für WhatsApp kopieren"><span x-icon="'share'"></span></button>
+          <button class="sign-arrow" data-drop-week="-1" @click="shiftWeek(-1)" aria-label="Vorherige Woche"><span x-icon="'chevron-left'"></span></button>
+          <button class="sign-week" @click="goWeek(0)" :aria-label="`Kalenderwoche ${weekNo}, zur aktuellen Woche springen`">
+            <span class="sign-kw">KW&nbsp;<span x-text="weekNo"></span></span>
+            <span class="sign-range" x-text="weekRange"></span>
+          </button>
+          <button class="sign-arrow" data-drop-week="1" @click="shiftWeek(1)" aria-label="Nächste Woche"><span x-icon="'chevron-right'"></span></button>
+          <button class="sign-tool" @click="openSettings()" aria-label="Einstellungen"><span x-icon="'settings'"></span></button>
+        </div>
+        <div class="sign-sub">
+          <span x-text="weekDistance"></span>
+          <span class="sign-dot" aria-hidden="true"></span>
+          <span x-text="weekCount === 1 ? '1 Gericht' : `${weekCount} Gerichte`"></span>
+          <button class="sign-today" x-show="!isCurrentWeek" x-transition.opacity @click="goWeek(0)">Zur aktuellen Woche</button>
+        </div>
+      </header>
+
+      <div class="scroller plan-scroller" data-scroll-key="plan" x-ref="planScroller">
+        <template x-if="ready">
+          <div class="days">
+            <template x-for="iso in days" :key="iso">
+              <article class="day" x-data="{ get d() { return dayView(iso) } }" :class="{ 'is-today': d.today, 'is-past': d.past, 'is-weekend': d.weekend }">
+                <header class="day-head">
+                  <h2 class="day-name"><span x-text="d.name"></span> <span class="day-date" x-text="d.date"></span></h2>
+                  <span class="day-badge" x-show="d.today">Heute</span>
+                  <button class="day-more" @click="dayMenu($event, d.iso)" :aria-label="`Optionen für ${d.name}`"><span x-icon="'dots-h'"></span></button>
+                </header>
+                <template x-for="s in d.slots" :key="s.key">
+                  <div class="slot" :class="`slot--${s.extra ? 'extra' : s.key}`" data-drop-slot :data-iso="d.iso" :data-slot="s.key">
+                    <button class="slot-label" @click="s.extra ? extraMenu($event, d.iso, s) : openEntry(d.iso, s.key)" :aria-label="s.extra ? `${s.label}: Optionen` : `${s.label} eintragen`">
+                      <span class="slot-dot" x-icon="s.extra ? 'extra' : s.key"></span>
+                      <span class="slot-name" x-text="s.short"></span>
+                    </button>
+                    <div class="slot-body">
+                      <template x-for="e in s.entries" :key="e.id">
+                        <div class="dish" :data-drag-entry="e.id" :data-iso="d.iso" :data-slot="s.key">
+                          <button class="dish-main" @click="openEntry(d.iso, s.key, e)">
+                            <span class="who-badge" x-show="e.who" :class="`who-badge--${e.who}`" x-text="e.who" :title="e.who === 'E' ? 'Nur Elika' : 'Nur Janik'"></span>
+                            <span class="dish-text">
+                              <span class="dish-title" x-text="titleOf(e)"></span>
+                              <span class="dish-note" x-show="e.note" x-text="noteLabel(e)"></span>
+                            </span>
+                            <span class="dish-flag" x-show="e.recipeId" x-icon="'recipe'" title="Rezept vorhanden"></span>
+                          </button>
+                          <button class="dish-more" data-no-drag @click.stop="entryMenu($event, d.iso, s.key, e)" :aria-label="`Optionen für ${titleOf(e)}`"><span x-icon="'dots'"></span></button>
+                        </div>
+                      </template>
+                      <button class="slot-add" x-show="!s.entries.length" @click="openEntry(d.iso, s.key)" :aria-label="`${s.label} eintragen`">
+                        <span x-icon="'plus'"></span>
+                      </button>
+                      <div class="who-pads" aria-hidden="true">
+                        <span class="who-pad who-pad--E" data-drop-who="E">Nur Elika</span>
+                        <span class="who-pad" data-drop-who="">Beide</span>
+                        <span class="who-pad who-pad--J" data-drop-who="J">Nur Janik</span>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+              </article>
+            </template>
+            <p class="plan-hint">Zum Verschieben ein Gericht gedrückt halten und ziehen. Über den Pfeilen oben verweilen, um die Woche zu wechseln.</p>
+          </div>
+        </template>
+      </div>
+    </section>
+
+    <!-- ============================================================ EINKAUF -->
+    <section class="view view--shop" :class="{ 'is-active': tab === 'shop' }" :inert="tab !== 'shop'" aria-label="Einkauf">
+      <header class="sign sign--plain">
+        <div class="sign-row">
+          <h1 class="sign-title">Einkauf <span class="sign-count" x-text="shopCount"></span></h1>
+          <div class="sign-tools">
+            <button class="sign-tool" @click="shopMenu($event)" aria-label="Weitere Optionen"><span x-icon="'dots'"></span></button>
+            <button class="sign-tool" @click="openSettings()" aria-label="Einstellungen"><span x-icon="'settings'"></span></button>
+          </div>
+        </div>
+      </header>
+
+      <button class="shop-undo" x-show="shopUndo" x-transition:enter="toast-enter" x-transition:enter-start="toast-from" @click="undoShop()" :aria-label="`Rückgängig: ${shopUndo?.count} Eintrag wieder auf die Liste`">
+        <span x-icon="'undo'"></span>
+        <span x-text="shopUndo?.count > 1 ? `${shopUndo.count} zurück` : 'Zurück'"></span>
+        <template x-if="shopUndo"><span class="shop-undo-bar" :key="shopUndo.until"></span></template>
+      </button>
+
+      <div class="scroller shop-scroller" data-scroll-key="shop">
+        <template x-if="ready">
+          <div class="shop-list">
+            <template x-for="g in shopGroups" :key="g.key">
+              <section class="store-group" :data-group="g.key" :class="{ 'is-collapsed': shopCollapsed[g.key], 'is-loose': !g.store }">
+                <header class="store-head">
+                  <button class="store-toggle" @click="toggleGroup(g.key)" :aria-expanded="!shopCollapsed[g.key]" :aria-label="`${g.store ? g.store.name : 'Ohne Laden'}, ${g.items.length} Einträge`">
+                    <span class="store-badge" x-show="g.store?.logo" x-html="g.store?.logo || ''"></span>
+                    <span class="store-name" x-show="!g.store?.logo" x-text="g.store ? g.store.name : 'Ohne Laden'"></span>
+                    <span class="store-count" x-text="g.items.length"></span>
+                    <span class="store-chev" x-icon="'chevron-down'"></span>
+                  </button>
+                  <button class="day-more" @click="groupMenu($event, g)" :aria-label="`Optionen für ${g.store ? g.store.name : 'Ohne Laden'}`"><span x-icon="'dots-h'"></span></button>
+                </header>
+                <div class="store-body">
+                  <div class="store-body-inner">
+                    <template x-for="row in (g.store ? g.rows : g.items.map((item) => ({ head: false, key: item.id, item })))" :key="row.key">
+                      <div class="shop-row">
+                        <template x-if="row.head">
+                          <p class="dept-head"><span x-icon="row.dept.icon"></span><span x-text="row.dept.label"></span></p>
+                        </template>
+                        <template x-if="!row.head">
+                          <div class="item" :data-item="row.item.id" x-longpress="openItemEdit(row.item)">
+                            <div class="item-main">
+                              <span class="item-name" x-text="row.item.name"></span>
+                              <span class="item-dept" x-show="!g.store" x-text="row.item.dept ? deptLabel(row.item.dept) : 'Abteilung wird ermittelt …'"></span>
+                              <div class="item-stores" x-show="!g.store" data-no-longpress x-hscroll>
+                                <template x-for="st in shopStores" :key="st.id">
+                                  <button class="mini-store" :class="{ 'is-text': !st.logo }" @click="assignStore(row.item, st.id)" :aria-label="`${row.item.name} zu ${st.name}`">
+                                    <span x-show="st.logo" x-html="st.logo || ''"></span>
+                                    <span x-show="!st.logo" x-text="st.name"></span>
+                                  </button>
+                                </template>
+                              </div>
+                            </div>
+                            <div class="item-qty" data-no-longpress>
+                              <button class="qty-btn" x-show="row.item.qty > 1" @click="decQty(row.item)" aria-label="Weniger"><span x-icon="'minus'"></span></button>
+                              <span class="qty-val" x-show="row.item.qty > 0" x-text="`${row.item.qty}×`"></span>
+                              <button class="qty-btn" @click="incQty(row.item)" aria-label="Mehr"><span x-icon="'plus'"></span></button>
+                            </div>
+                            <button class="item-check" data-no-longpress @click="checkItem(row.item)" :aria-label="`${row.item.name} abhaken`"><span x-icon="'check'"></span></button>
+                          </div>
+                        </template>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+              </section>
+            </template>
+            <div class="soon soon--shop" x-show="!shopCount">
+              <span class="soon-badge" x-icon="'basket'"></span>
+              <h2>Die Liste ist leer</h2>
+              <p>Unten eintippen und mit Enter eintragen, oder das Mikrofon gedrückt halten und alles auf einmal einsprechen.</p>
+            </div>
+            <p class="plan-hint" x-show="shopCount">Abhaken legt in den Korb. Lange drücken zum Ändern von Name, Laden und Abteilung.</p>
+          </div>
+        </template>
+      </div>
+
+      <div class="composer">
+        <div class="composer-suggest" x-show="shopFocus && shopSuggestions.length" x-transition.opacity>
+          <template x-for="p in shopSuggestions" :key="p.name">
+            <button class="chip chip--product" @pointerdown.prevent @click="pickProduct(p)">
+              <span x-icon="DEPTS.find((d) => d.key === p.dept)?.icon || 'dept-other'"></span><span x-text="p.name"></span>
+            </button>
+          </template>
+        </div>
+        <div class="composer-rec" x-show="rec.state !== 'idle'" role="status">
+          <span class="rec-dot" :class="{ 'is-busy': rec.state === 'busy' }"></span>
+          <span x-text="rec.state === 'recording' ? `Ich höre zu · 0:${String(rec.seconds).padStart(2, '0')} · loslassen zum Eintragen` : rec.state === 'busy' ? rec.text : 'Mikrofon wird gestartet …'"></span>
+        </div>
+        <div class="store-pick" role="radiogroup" aria-label="Laden für neue Einträge" x-hscroll>
+          <button class="pick" role="radio" :aria-checked="!shopStore" @click="shopStore = null">Ohne Laden</button>
+          <template x-for="st in shopStores" :key="st.id">
+            <button class="pick" :class="{ 'pick--logo': st.logo }" role="radio" :aria-checked="shopStore === st.id" @click="shopStore = st.id" x-longpress="storeChipPress(st)" :aria-label="st.name">
+              <span x-show="st.logo" x-html="st.logo || ''"></span>
+              <span x-show="!st.logo" x-text="st.name"></span>
+            </button>
+          </template>
+          <button class="pick pick--add" @click="openStoreForm()" aria-label="Laden hinzufügen"><span x-icon="'plus'"></span></button>
+        </div>
+        <div class="composer-row">
+          <label class="composer-field">
+            <input x-ref="shopInput" type="text" x-model="shopInput" @keydown="shopKey($event)" @focus="shopFocus = true" @blur="setTimeout(() => shopFocus = false, 120)"
+                   :placeholder="shopStore ? `Für ${storeOf(shopStore)?.name} eintragen …` : 'Was wird gebraucht?'" enterkeyhint="enter" autocomplete="off" autocapitalize="sentences" aria-label="Neuer Eintrag">
+            <button class="composer-send" x-show="shopInput.trim()" @pointerdown.prevent @click="addShopItem()" aria-label="Eintragen"><span x-icon="'check'"></span></button>
+          </label>
+          <button class="mic" :class="`is-${rec.state}`" @pointerdown="recStart($event)" @pointerup="recStop()" @pointercancel="recStop()" @contextmenu.prevent
+                  :aria-label="rec.state === 'recording' ? 'Loslassen zum Eintragen' : 'Gedrückt halten und Einkaufsliste einsprechen'">
+            <span x-show="rec.state !== 'busy'" x-icon="'mic'"></span>
+            <span x-show="rec.state === 'busy'" class="spin" x-icon="'spinner'"></span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ REZEPTE -->
+    <section class="view" :class="{ 'is-active': tab === 'recipes' }" :inert="tab !== 'recipes'" aria-label="Rezepte">
+      <header class="sign sign--plain">
+        <div class="sign-row">
+          <h1 class="sign-title">Rezepte <span class="sign-count" x-text="db?.recipes.length"></span></h1>
+          <div class="sign-tools"><button class="sign-tool" @click="openSettings()" aria-label="Einstellungen"><span x-icon="'settings'"></span></button></div>
+        </div>
+        <div class="finder">
+          <label class="search">
+            <span class="search-icon" x-icon="'search'"></span>
+            <input type="search" placeholder="Rezept oder Zutat suchen" x-model="recipeQuery" enterkeyhint="search" autocomplete="off" aria-label="Rezepte durchsuchen">
+            <button class="search-clear" x-show="recipeQuery" @click="recipeQuery = ''" aria-label="Suche leeren"><span x-icon="'x'"></span></button>
+          </label>
+          <div class="segmented" role="radiogroup" aria-label="Sortierung" x-show="!recipeQuery.trim()">
+            <button role="radio" :aria-checked="recipeSort === 'rating'" @click="recipeSort = 'rating'"><span x-icon.fill="'star'"></span>Bewertung</button>
+            <button role="radio" :aria-checked="recipeSort === 'alpha'" @click="recipeSort = 'alpha'"><span x-icon="'az'"></span>A–Z</button>
+          </div>
+        </div>
+      </header>
+
+      <div class="scroller" data-scroll-key="recipes">
+        <template x-if="ready">
+          <div class="recipes">
+            <template x-for="g in recipeGroups" :key="g.key">
+              <section class="recipe-group">
+                <h2 class="recipe-letter" x-show="g.label" x-text="g.label"></h2>
+                <ul class="plate-list">
+                  <template x-for="r in g.items" :key="r.id">
+                    <li>
+                      <button class="recipe-row" @click="openDetail(r.id)">
+                        <span class="recipe-name" x-text="r.title"></span>
+                        <span class="recipe-meta">
+                          <span class="recipe-avg" :class="{ 'is-empty': avg(r) == null }"><span x-icon.fill="'star'"></span><span x-text="fmtRating(avg(r))"></span></span>
+                          <span class="recipe-who" x-show="r.ratingElika || r.ratingJanik">E <b x-text="fmtRating(r.ratingElika)"></b> · J <b x-text="fmtRating(r.ratingJanik)"></b></span>
+                          <span class="recipe-video" x-show="r.video" x-icon="'play'" title="Mit Video"></span>
+                        </span>
+                      </button>
+                    </li>
+                  </template>
+                </ul>
+              </section>
+            </template>
+            <div class="empty" x-show="recipeQuery.trim() && !recipeList.length">
+              <p>Kein Rezept passt zu „<span x-text="recipeQuery.trim()"></span>".</p>
+              <button class="btn btn--primary" @click="openEditor(null, { prefill: { title: recipeQuery.trim() } })"><span x-icon="'plus'"></span>Als neues Rezept anlegen</button>
+            </div>
+            <div class="empty" x-show="!recipeQuery.trim() && !db.recipes.length">
+              <p>Noch keine Rezepte gespeichert.</p>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <button class="fab" @click="openEditor()" aria-label="Neues Rezept"><span x-icon="'plus'"></span><span>Rezept</span></button>
+
+      <!-- Rezept-Detail -->
+      <div class="detail" x-show="detail" x-transition:enter="detail-enter" x-transition:enter-start="detail-from" x-transition:leave="detail-leave" x-transition:leave-end="detail-from">
+        <template x-if="detail">
+          <div class="detail-inner">
+            <header class="detail-bar">
+              <button class="round-btn" @click="closeDetail()" aria-label="Zurück zur Liste"><span x-icon="'back'"></span></button>
+              <div class="detail-bar-actions">
+                <button class="round-btn" @click="openPicker('place', { title: detail.title, recipeId: detail.id })" aria-label="Einplanen"><span x-icon="'calendar-plus'"></span></button>
+                <button class="round-btn" @click="openEditor(detail)" aria-label="Bearbeiten"><span x-icon="'pencil'"></span></button>
+                <button class="round-btn" @click="detailMenu($event)" aria-label="Weitere Optionen"><span x-icon="'dots'"></span></button>
+              </div>
+            </header>
+            <div class="scroller detail-scroller" x-ref="detailScroller" data-scroll-key="detail">
+              <h1 class="detail-title" x-text="detail.title"></h1>
+              <p class="detail-usage" x-show="detailUsage.count">
+                <span x-icon="'history'"></span>
+                <span x-text="`${detailUsage.count}× geplant · zuletzt ${fmtDate(detailUsage.last)}`"></span>
+              </p>
+
+              <div class="ratings">
+                <template x-for="who in [{ key: 'ratingElika', name: 'Elika' }, { key: 'ratingJanik', name: 'Janik' }]" :key="who.key">
+                  <div class="rating" x-data="{ get val() { return detail?.[who.key] || 0 }, set(v) { rateDetail(who.key, v) } }">
+                    <span class="rating-name" x-text="who.name"></span>
+                    <div class="stars" role="slider" tabindex="0" aria-valuemin="0" aria-valuemax="5" :aria-valuenow="val" :aria-valuetext="`${fmtRating(val)} von 5 Sternen`" :aria-label="`Bewertung ${who.name}`" @keydown="const v = ratingKey($event, val); if (v !== null) set(v)">
+                      <template x-for="i in 5" :key="i">
+                        <button type="button" class="star" tabindex="-1" @click="set(ratingFromPointer($event, i - 1, val))">
+                          <span class="star-base" x-icon="'star'"></span>
+                          <span class="star-fill" :style="`clip-path: inset(0 ${(1 - starFill(val, i - 1)) * 100}% 0 0)`"><span x-icon.fill="'star'"></span></span>
+                        </button>
+                      </template>
+                    </div>
+                    <span class="rating-value" x-text="fmtRating(val)"></span>
+                  </div>
+                </template>
+              </div>
+
+              <template x-if="detailVideo?.embedUrl">
+                <div class="video" :class="{ 'is-portrait': detailVideo.portrait, 'is-instagram': detailVideo.kind === 'instagram' }">
+                  <iframe :src="detailVideo.embedUrl" loading="lazy" allow="autoplay; encrypted-media; picture-in-picture; clipboard-write; web-share" allowfullscreen referrerpolicy="strict-origin-when-cross-origin" title="Rezeptvideo"></iframe>
+                </div>
+              </template>
+              <a class="link-row" x-show="detail.video && !detailVideo?.embedUrl" :href="detail.video" target="_blank" rel="noopener"><span x-icon="'play'"></span><span x-text="`Video auf ${hostOf(detail.video)}`"></span></a>
+
+              <section class="block" x-show="detail.ingredients.length">
+                <h2 class="block-title">Zutaten</h2>
+                <ul class="ingredients">
+                  <template x-for="(ing, i) in detail.ingredients" :key="i">
+                    <li><label :class="{ 'is-checked': checked[i] }"><input type="checkbox" x-model="checked[i]"><span class="check" x-icon="'check'"></span><span x-text="ing"></span></label></li>
+                  </template>
+                </ul>
+              </section>
+
+              <section class="block" x-show="detail.steps.length">
+                <h2 class="block-title">Zubereitung</h2>
+                <ol class="steps">
+                  <template x-for="(st, i) in detail.steps" :key="i">
+                    <li><span class="step-no" x-text="i + 1"></span><span x-text="st"></span></li>
+                  </template>
+                </ol>
+              </section>
+
+              <section class="block" x-show="detail.notes">
+                <h2 class="block-title">Notizen</h2>
+                <p class="notes" x-text="detail.notes"></p>
+              </section>
+
+              <a class="link-row" x-show="detail.source" :href="detail.source" target="_blank" rel="noopener"><span x-icon="'external'"></span><span x-text="`Quelle: ${hostOf(detail.source)}`"></span></a>
+
+              <div class="empty empty--detail" x-show="!detail.ingredients.length && !detail.steps.length && !detail.notes && !detail.video">
+                <p>Zu diesem Rezept ist bisher nur der Titel gespeichert.</p>
+                <button class="btn" @click="openEditor(detail)"><span x-icon="'sparkles'"></span>Ergänzen oder per KI importieren</button>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </section>
+
+    <!-- ============================================================ VORRAT -->
+    <section class="view view--pantry" :class="{ 'is-active': tab === 'pantry' }" :inert="tab !== 'pantry'" aria-label="Vorrat">
+      <header class="sign sign--plain">
+        <div class="sign-row">
+          <h1 class="sign-title">Vorrat <span class="sign-count" x-text="pantryCount"></span></h1>
+          <div class="sign-tools"><button class="sign-tool" @click="openSettings()" aria-label="Einstellungen"><span x-icon="'settings'"></span></button></div>
+        </div>
+        <div class="finder">
+          <label class="search">
+            <span class="search-icon" x-icon="'search'"></span>
+            <input type="search" placeholder="Vorrat durchsuchen" x-model="pantryQuery" enterkeyhint="search" autocomplete="off" aria-label="Vorrat durchsuchen">
+            <button class="search-clear" x-show="pantryQuery" @click="pantryQuery = ''" aria-label="Suche leeren"><span x-icon="'x'"></span></button>
+          </label>
+        </div>
+      </header>
+
+      <div class="scroller shop-scroller" data-scroll-key="pantry">
+        <template x-if="ready">
+          <div class="shop-list">
+            <template x-for="m in pantryGroups" :key="m.key">
+              <section class="store-group pantry-group" :class="`pantry-group--${m.key}`">
+                <header class="store-head pantry-head">
+                  <span class="pantry-icon" x-icon="m.icon"></span>
+                  <h2 class="store-name" x-text="m.label"></h2>
+                  <span class="store-count" x-text="m.count"></span>
+                </header>
+                <template x-for="p in m.places" :key="p.key">
+                  <div class="pantry-place" :class="{ 'is-brick': p.key.startsWith('freezer/bricks') }">
+                    <template x-if="p.key === 'freezer/bricks/dish'">
+                      <div class="brick-band">
+                        <span class="brick-band-label"><span x-icon="'brick'"></span>LEGO-Bricks</span>
+                        <button class="btn btn--small brick-ai" @click="suggestBricks()" :disabled="brickStock.length < 2"><span x-icon="'sparkles'"></span>Kombis vorschlagen</button>
+                      </div>
+                    </template>
+                    <p class="dept-head" x-show="m.sub"><span x-text="p.label"></span></p>
+                    <template x-for="it in p.items" :key="it.id">
+                      <div class="item pantry-item" :class="{ 'is-empty': it.qty === 0 }" :data-pantry="it.id" x-longpress="openPantryEdit(it)">
+                        <div class="item-main"><span class="item-name" x-text="it.name"></span></div>
+                        <div class="stepper" data-no-longpress>
+                          <button class="qty-btn" @click="pantryStep(it, -1)" :disabled="it.qty === 0" :aria-label="`${it.name}: eins weniger`"><span x-icon="'minus'"></span></button>
+                          <input class="stepper-input" type="text" inputmode="numeric" pattern="[0-9]*" :value="it.qty" @focus="$el.select()" @change="setPantryQty(it, $el.value)" @keydown.enter.prevent="$el.blur()" :aria-label="`Anzahl ${it.name}`">
+                          <button class="qty-btn" @click="pantryStep(it, 1)" :aria-label="`${it.name}: eins mehr`"><span x-icon="'plus'"></span></button>
+                        </div>
+                      </div>
+                    </template>
+                    <button class="pantry-empty" x-show="!p.items.length && !pantryQuery" @click="pantryPlace = p.key; $refs.pantryInput.focus()">
+                      <span x-icon="'plus'"></span><span x-text="`${p.path.join(' · ')} eintragen`"></span>
+                    </button>
+                  </div>
+                </template>
+              </section>
+            </template>
+            <div class="empty" x-show="pantryQuery.trim() && !pantryGroups.length">
+              <p>Nichts gefunden zu „<span x-text="pantryQuery.trim()"></span>".</p>
+            </div>
+            <p class="plan-hint">Nur eintragen, was man leicht aus den Augen verliert. Lange drücken zum Umbenennen, Verschieben oder Löschen.</p>
+          </div>
+        </template>
+      </div>
+
+      <div class="composer">
+        <div class="store-pick" role="radiogroup" aria-label="Ort für neue Vorräte" x-hscroll>
+          <template x-for="p in PLACES" :key="p.key">
+            <button class="pick pick--place" role="radio" :aria-checked="pantryPlace === p.key" @click="pantryPlace = p.key"><span x-icon="p.icon"></span><span x-text="p.short"></span></button>
+          </template>
+        </div>
+        <div class="composer-row">
+          <label class="composer-field">
+            <input x-ref="pantryInput" type="text" x-model="pantryInput" @keydown.enter.prevent="addPantry()" @focus="shopFocus = true" @blur="setTimeout(() => shopFocus = false, 120)"
+                   :placeholder="`${placeShort(pantryPlace)}: was kommt dazu?`" enterkeyhint="enter" autocomplete="off" autocapitalize="sentences" aria-label="Neuer Vorrat">
+            <button class="composer-send" x-show="pantryInput.trim()" @pointerdown.prevent @click="addPantry()" aria-label="Eintragen"><span x-icon="'check'"></span></button>
+          </label>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabbar" aria-label="Hauptnavigation">
+    <template x-for="t in TABS" :key="t.key">
+      <button class="tab" :class="{ 'is-active': tab === t.key }" :aria-current="tab === t.key ? 'page' : null" @click="setTab(t.key)">
+        <span class="tab-pill"><span x-icon="t.icon"></span></span>
+        <span class="tab-label" x-text="t.label"></span>
+      </button>
+    </template>
+  </nav>
+</div>
+
+<!-- ============================================================ KONTEXTMENÜ -->
+<div class="menu-layer" x-show="menu" @click.self="closeMenu()" @keydown.escape.window="menu && closeMenu()" x-cloak>
+  <div class="menu" role="menu" x-show="menu" x-transition:enter="menu-enter" x-transition:enter-start="menu-from" :style="menu && `left:${menu.left}px;top:${menu.top}px;transform-origin:${menu.origin}`">
+    <template x-for="item in menu?.items || []" :key="item.label">
+      <button role="menuitem" class="menu-item" :class="{ 'is-danger': item.danger }" @click="runMenu(item)">
+        <span x-icon="item.icon"></span><span x-text="item.label"></span>
+      </button>
+    </template>
+  </div>
+</div>
+
+<!-- ============================================================ EINTRAGEN -->
+<div class="scrim" x-show="isOpen('entry')" x-transition.opacity @click="closeLayer('entry')" x-cloak></div>
+<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="entry-title" x-show="isOpen('entry')" x-transition:enter="sheet-enter" x-transition:enter-start="sheet-from" x-transition:leave="sheet-leave" x-transition:leave-end="sheet-from" x-cloak>
+  <template x-if="entry">
+    <div class="sheet-inner">
+      <div class="sheet-head">
+        <span class="slot-dot" :class="`slot-dot--${['breakfast', 'lunch', 'dinner'].includes(entry.slot) ? entry.slot : 'extra'}`" x-icon="['breakfast', 'lunch', 'dinner'].includes(entry.slot) ? entry.slot : 'extra'"></span>
+        <h2 id="entry-title" class="sheet-title" x-text="where(entry.iso, entry.slot)"></h2>
+        <button class="round-btn round-btn--quiet" @click="closeLayer('entry')" aria-label="Schließen"><span x-icon="'x'"></span></button>
+      </div>
+      <div class="entry-field" :class="{ 'is-linked': entry.recipeId }">
+        <input class="entry-input" x-ref="entryInput" type="text" x-model="entry.title" @input="entryTyped()" @keydown="entryKey($event)"
+               placeholder="Gericht eintippen oder Rezept suchen" enterkeyhint="done" autocomplete="off" autocapitalize="sentences"
+               role="combobox" aria-autocomplete="list" aria-controls="entry-suggestions" :aria-expanded="entryOptions.length > 0">
+        <button class="entry-clear" x-show="entry.title" @click="entry.title = ''; entry.recipeId = null; $refs.entryInput.focus()" aria-label="Eingabe leeren"><span x-icon="'x'"></span></button>
+      </div>
+      <p class="entry-linked" x-show="entry.recipeId"><span x-icon="'recipe'"></span>Mit Rezept verknüpft</p>
+      <div class="entry-note" x-show="entry.noteOpen">
+        <span class="entry-note-icon" x-icon="'note'"></span>
+        <input x-ref="noteInput" type="text" x-model="entry.note" @keydown.enter.prevent="saveEntry()" placeholder="Notiz, z. B. „Doppelte Menge als Meal Prep“" autocomplete="off" aria-label="Notiz zum Gericht">
+      </div>
+
+      <div class="suggest" id="entry-suggestions" role="listbox" x-show="entryOptions.length">
+        <p class="suggest-head" x-show="entrySuggestions.recipes.length" x-text="entrySuggestions.recent ? 'Zuletzt gekocht' : 'Rezepte'"></p>
+        <template x-for="(r, i) in entrySuggestions.recipes" :key="r.id">
+          <button class="suggest-item" role="option" :aria-selected="entryActive === i" :class="{ 'is-active': entryActive === i }" @click="pickSuggestion({ kind: 'recipe', r })">
+            <span class="suggest-icon" x-icon="'recipe'"></span>
+            <span class="suggest-title" x-text="r.title"></span>
+            <span class="suggest-rating" x-show="avg(r) != null"><span x-icon.fill="'star'"></span><span x-text="fmtRating(avg(r))"></span></span>
+          </button>
+        </template>
+        <p class="suggest-head" x-show="entrySuggestions.history.length">Früher geplant</p>
+        <template x-for="(h, j) in entrySuggestions.history" :key="h.title">
+          <button class="suggest-item" role="option" :aria-selected="entryActive === entrySuggestions.recipes.length + j" :class="{ 'is-active': entryActive === entrySuggestions.recipes.length + j }" @click="pickSuggestion({ kind: 'history', h })">
+            <span class="suggest-icon" x-icon="'history'"></span>
+            <span class="suggest-title" x-text="h.title"></span>
+            <span class="suggest-count" x-text="`${h.count}×`"></span>
+          </button>
+        </template>
+      </div>
+
+      <div class="entry-new" x-show="entry.title.trim() && !entry.recipeId && !entryExactRecipe">
+        <label class="toggle">
+          <input type="checkbox" x-model="entry.asRecipe">
+          <span class="toggle-box" x-icon="'check'"></span>
+          <span>Auch als neues Rezept speichern</span>
+        </label>
+        <button class="text-btn" @click="entryAsDetailedRecipe()"><span x-icon="'sparkles'"></span>Mit Details oder KI-Import anlegen</button>
+      </div>
+
+      <div class="sheet-actions">
+        <button class="text-btn sheet-actions-left" x-show="!entry.noteOpen" @click="entry.noteOpen = true; $nextTick(() => $refs.noteInput?.focus())"><span x-icon="'note'"></span>Notiz</button>
+        <button class="btn btn--ghost-danger" x-show="entry.id" @click="deleteEntryFromSheet()"><span x-icon="'trash'"></span>Entfernen</button>
+        <button class="btn btn--primary" @click="saveEntry()" :disabled="!entry.title.trim() && !entry.id"><span x-icon="'check'"></span><span x-text="entry.id ? 'Speichern' : 'Eintragen'"></span></button>
+      </div>
+    </div>
+  </template>
+</div>
+
+<!-- ============================================================ ZIEL WÄHLEN -->
+<div class="scrim" x-show="isOpen('picker')" x-transition.opacity @click="closeLayer('picker')" x-cloak></div>
+<div class="sheet sheet--tall" role="dialog" aria-modal="true" aria-labelledby="picker-title" x-show="isOpen('picker')" x-transition:enter="sheet-enter" x-transition:enter-start="sheet-from" x-transition:leave="sheet-leave" x-transition:leave-end="sheet-from" x-cloak>
+  <template x-if="picker">
+    <div class="sheet-inner">
+      <div class="sheet-head">
+        <div class="sheet-head-text">
+          <h2 id="picker-title" class="sheet-title" x-text="pickerTitle"></h2>
+          <p class="sheet-sub" x-text="picker.src.title"></p>
+        </div>
+        <button class="round-btn round-btn--quiet" @click="closeLayer('picker')" aria-label="Schließen"><span x-icon="'x'"></span></button>
+      </div>
+      <div class="quick" x-show="pickerQuick.length">
+        <template x-for="q in pickerQuick" :key="q.iso + q.slot">
+          <button class="chip chip--quick" @click="pickTarget(q.iso, q.slot)"><span x-icon="q.slot"></span><span x-text="q.label"></span></button>
+        </template>
+      </div>
+      <div class="picker-week">
+        <button class="round-btn round-btn--quiet" @click="picker.monday = addWeek(picker.monday, -1)" aria-label="Vorherige Woche"><span x-icon="'chevron-left'"></span></button>
+        <span x-text="`KW ${kwOf(picker.monday)} · ${rangeOf(picker.monday)}`"></span>
+        <button class="round-btn round-btn--quiet" @click="picker.monday = addWeek(picker.monday, 1)" aria-label="Nächste Woche"><span x-icon="'chevron-right'"></span></button>
+      </div>
+      <div class="picker-grid scroller">
+        <template x-for="d in pickerDays" :key="d.iso">
+          <div class="picker-day" :class="{ 'is-today': d.today, 'is-past': d.past }">
+            <span class="picker-dayname"><b x-text="d.short"></b> <span x-text="d.date"></span></span>
+            <div class="picker-slots">
+              <template x-for="s in d.slots" :key="s.key">
+                <button class="picker-slot" :class="`slot--${s.extra ? 'extra' : s.key}${picker.src.iso === d.iso && picker.src.slot === s.key ? ' is-source' : ''}${s.entries.length ? ' is-filled' : ''}`"
+                        :disabled="picker.mode === 'move' && picker.src.iso === d.iso && picker.src.slot === s.key"
+                        @click="pickTarget(d.iso, s.key)" :aria-label="`${d.short} ${d.date}, ${s.label}${s.entries.length ? ', belegt' : ''}`">
+                  <span x-icon="s.extra ? 'extra' : s.key"></span><span x-text="s.short"></span>
+                </button>
+              </template>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </template>
+</div>
+
+<!-- ============================================================ WEITERE MAHLZEIT -->
+<div class="scrim" x-show="isOpen('slot')" x-transition.opacity @click="closeLayer('slot')" x-cloak></div>
+<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="slot-title" x-show="isOpen('slot')" x-transition:enter="sheet-enter" x-transition:enter-start="sheet-from" x-transition:leave="sheet-leave" x-transition:leave-end="sheet-from" x-cloak>
+  <template x-if="slotForm">
+    <div class="sheet-inner">
+      <div class="sheet-head">
+        <div class="sheet-head-text">
+          <h2 id="slot-title" class="sheet-title" x-text="slotForm.id ? 'Mahlzeit umbenennen' : 'Weitere Mahlzeit'"></h2>
+          <p class="sheet-sub" x-text="dayLabel(slotForm.iso)"></p>
+        </div>
+        <button class="round-btn round-btn--quiet" @click="closeLayer('slot')" aria-label="Schließen"><span x-icon="'x'"></span></button>
+      </div>
+      <input class="entry-input entry-input--solo" x-ref="slotInput" type="text" x-model="slotForm.label" @keydown.enter.prevent="saveSlot()" placeholder="z. B. Snack" enterkeyhint="done" autocomplete="off">
+      <div class="quick" x-show="!slotForm.id">
+        <template x-for="p in EXTRA_PRESETS" :key="p">
+          <button class="chip" @click="saveSlot(p)" x-text="p"></button>
+        </template>
+      </div>
+      <div class="sheet-actions">
+        <button class="btn btn--primary" @click="saveSlot()" :disabled="!slotForm.label.trim()"><span x-icon="'check'"></span><span x-text="slotForm.id ? 'Umbenennen' : 'Hinzufügen'"></span></button>
+      </div>
+    </div>
+  </template>
+</div>
+
+<!-- ============================================================ REZEPT-EDITOR -->
+<div class="page" role="dialog" aria-modal="true" aria-labelledby="editor-title" x-show="isOpen('editor')" x-transition:enter="page-enter" x-transition:enter-start="page-from" x-transition:leave="page-leave" x-transition:leave-end="page-from" x-cloak>
+  <template x-if="editor">
+    <div class="page-inner">
+      <header class="page-bar">
+        <button class="text-btn" @click="cancelEditor()">Abbrechen</button>
+        <h2 id="editor-title" class="page-title" x-text="editor.isNew ? 'Neues Rezept' : 'Rezept bearbeiten'"></h2>
+        <button class="btn btn--primary btn--small" @click="saveEditor()">Sichern</button>
+      </header>
+      <div class="scroller page-scroller" x-ref="editorScroller">
+
+        <section class="ai" :class="{ 'is-open': editor.importOpen }">
+          <button class="ai-head" @click="editor.importOpen = !editor.importOpen" :aria-expanded="editor.importOpen">
+            <span class="ai-badge" x-icon="'sparkles'"></span>
+            <span class="ai-head-text">
+              <b>Rezept per KI importieren</b>
+              <span>Text aus Reel, Website oder Chat einfügen</span>
+            </span>
+            <span class="ai-chevron" x-icon="'chevron-right'"></span>
+          </button>
+          <div class="ai-body" x-show="editor.importOpen">
+            <template x-if="!settings.keys.length">
+              <div class="ai-nokey">
+                <p>Für den Import wird mindestens ein Gemini-API-Schlüssel benötigt.</p>
+                <button class="btn btn--small" @click="openSettings()"><span x-icon="'key'"></span>Schlüssel hinterlegen</button>
+              </div>
+            </template>
+            <textarea class="field-area field-area--import" x-model="editor.importText" rows="7" placeholder="Rezepttext hier einfügen …" :disabled="editor.busy"></textarea>
+            <button class="btn btn--primary btn--wide" @click="runImport()" :disabled="editor.busy || !settings.keys.length">
+              <span x-show="!editor.busy" x-icon="'sparkles'"></span>
+              <span x-show="editor.busy" class="spin" x-icon="'spinner'"></span>
+              <span x-text="editor.busy ? 'Wird ausgelesen …' : 'Auslesen und übernehmen'"></span>
+            </button>
+          </div>
+          <p class="ai-status" x-show="editor.status" :class="`is-${editor.statusTone}`" x-text="editor.status" role="status"></p>
+        </section>
+
+        <div class="form">
+          <label class="field">
+            <span class="field-label">Titel <em>Pflichtfeld</em></span>
+            <input class="field-input field-input--title" x-ref="editorTitle" type="text" x-model="editor.title" @input="editor.error = ''" placeholder="Name des Gerichts" autocapitalize="sentences">
+            <span class="field-error" x-show="editor.error" x-text="editor.error"></span>
+          </label>
+
+          <div class="field">
+            <span class="field-label">Bewertung</span>
+            <div class="ratings ratings--form">
+              <template x-for="who in [{ key: 'ratingElika', name: 'Elika' }, { key: 'ratingJanik', name: 'Janik' }]" :key="who.key">
+                <div class="rating" x-data="{ get val() { return editor?.[who.key] || 0 }, set(v) { editor[who.key] = v } }">
+                  <span class="rating-name" x-text="who.name"></span>
+                  <div class="stars" role="slider" tabindex="0" aria-valuemin="0" aria-valuemax="5" :aria-valuenow="val" :aria-valuetext="`${fmtRating(val)} von 5 Sternen`" :aria-label="`Bewertung ${who.name}`" @keydown="const v = ratingKey($event, val); if (v !== null) set(v)">
+                    <template x-for="i in 5" :key="i">
+                      <button type="button" class="star" tabindex="-1" @click="set(ratingFromPointer($event, i - 1, val))">
+                        <span class="star-base" x-icon="'star'"></span>
+                        <span class="star-fill" :style="`clip-path: inset(0 ${(1 - starFill(val, i - 1)) * 100}% 0 0)`"><span x-icon.fill="'star'"></span></span>
+                      </button>
+                    </template>
+                  </div>
+                  <span class="rating-value" x-text="fmtRating(val)"></span>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <label class="field">
+            <span class="field-label">Zutaten <em>eine pro Zeile</em></span>
+            <textarea class="field-area" x-model="editor.ingredients" rows="6" placeholder="200 g Spaghetti&#10;2 Knoblauchzehen&#10;Olivenöl"></textarea>
+          </label>
+
+          <label class="field">
+            <span class="field-label">Zubereitung <em>ein Schritt pro Zeile</em></span>
+            <textarea class="field-area" x-model="editor.steps" rows="6" placeholder="Nudeln kochen&#10;Knoblauch in Öl anschwitzen"></textarea>
+          </label>
+
+          <label class="field">
+            <span class="field-label">Video <em>Instagram oder YouTube</em></span>
+            <input class="field-input" type="url" inputmode="url" x-model="editor.video" placeholder="https://www.instagram.com/reel/…" autocomplete="off">
+          </label>
+          <template x-if="editorVideo?.embedUrl">
+            <div class="video video--preview" :class="{ 'is-portrait': editorVideo.portrait, 'is-instagram': editorVideo.kind === 'instagram' }">
+              <iframe :src="editorVideo.embedUrl" loading="lazy" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="strict-origin-when-cross-origin" title="Videovorschau"></iframe>
+            </div>
+          </template>
+          <p class="field-hint" x-show="editor.video.trim() && !editorVideo?.embedUrl">Diese Adresse lässt sich nicht einbetten und wird als Link gespeichert.</p>
+
+          <label class="field">
+            <span class="field-label">Notizen</span>
+            <textarea class="field-area" x-model="editor.notes" rows="3" placeholder="Tipps, Varianten, Nährwerte"></textarea>
+          </label>
+
+          <label class="field">
+            <span class="field-label">Quelle</span>
+            <input class="field-input" type="url" inputmode="url" x-model="editor.source" placeholder="https://…" autocomplete="off">
+          </label>
+        </div>
+      </div>
+    </div>
+  </template>
+</div>
+
+<!-- ============================================================ EINSTELLUNGEN -->
+<div class="page" role="dialog" aria-modal="true" aria-labelledby="settings-title" x-show="isOpen('settings')" x-transition:enter="page-enter" x-transition:enter-start="page-from" x-transition:leave="page-leave" x-transition:leave-end="page-from" x-cloak>
+  <div class="page-inner">
+    <header class="page-bar">
+      <button class="round-btn round-btn--quiet" @click="closeLayer('settings')" aria-label="Zurück"><span x-icon="'back'"></span></button>
+      <h2 id="settings-title" class="page-title">Einstellungen</h2>
+      <span class="page-bar-spacer"></span>
+    </header>
+    <div class="scroller page-scroller">
+      <section class="block">
+        <h3 class="block-title">Gemini-API-Schlüssel</h3>
+        <p class="block-text">Für den KI-Import von Rezepten. Mehrere Schlüssel wechseln sich automatisch ab, sobald ein Modell oder ein Schlüssel ausgelastet ist. Die Schlüssel bleiben auf diesem Gerät und sind in keiner Sicherung enthalten.</p>
+        <ul class="plate-list keys" x-show="settings.keys.length">
+          <template x-for="(k, i) in settings.keys" :key="k">
+            <li class="key-row">
+              <span class="key-no" x-text="i + 1"></span>
+              <code x-text="settings.reveal ? k : mask(k)"></code>
+              <button class="round-btn round-btn--quiet" @click="removeKey(k)" :aria-label="`Schlüssel ${i + 1} entfernen`"><span x-icon="'trash'"></span></button>
+            </li>
+          </template>
+        </ul>
+        <div class="key-add">
+          <input class="field-input" type="password" x-model="settings.newKey" @keydown.enter.prevent="addKey()" placeholder="Schlüssel einfügen (AIza… oder AQ.…)" autocomplete="off" spellcheck="false" aria-label="Neuer Schlüssel">
+          <button class="btn btn--primary" @click="addKey()" :disabled="!settings.newKey.trim()"><span x-icon="'plus'"></span>Hinzufügen</button>
+        </div>
+        <div class="key-tools" x-show="settings.keys.length">
+          <button class="btn btn--small" @click="testKeys()" :disabled="settings.testing">
+            <span x-show="settings.testing" class="spin" x-icon="'spinner'"></span><span x-show="!settings.testing" x-icon="'check'"></span>
+            <span x-text="settings.testing ? 'Teste …' : 'Schlüssel testen'"></span>
+          </button>
+          <button class="btn btn--small" @click="settings.reveal = !settings.reveal"><span x-icon="settings.reveal ? 'eye-off' : 'eye'"></span><span x-text="settings.reveal ? 'Verbergen' : 'Anzeigen'"></span></button>
+        </div>
+        <pre class="test-result" x-show="settings.testResult" x-text="settings.testResult"></pre>
+        <div class="quota" x-show="settings.blocks.length">
+          <p class="block-text">Gerade ausgelastet:</p>
+          <ul>
+            <template x-for="b in settings.blocks" :key="b.tag + b.model">
+              <li x-text="blockLabel(b)"></li>
+            </template>
+          </ul>
+          <button class="text-btn" @click="clearQuota()"><span x-icon="'undo'"></span>Sperrliste leeren</button>
+        </div>
+        <p class="block-text block-text--fine">Modell: Gemini 3.5 Flash Lite, bei Auslastung weiter über die Flash-Modelle und die übrigen Lite-Modelle.</p>
+      </section>
+
+      <section class="block">
+        <h3 class="block-title">Daten &amp; Sicherung</h3>
+        <p class="block-text" x-text="`${stats.recipes} Rezepte · ${stats.entries} Einträge an ${stats.days} Tagen${stats.since ? ` · seit ${fmtDate(stats.since)}` : ''} · ${db?.shopping.items.length || 0} Einkaufsposten · ${db?.pantry.items.length || 0} Vorräte`"></p>
+        <p class="block-text">Alles liegt sicher nur auf diesem Gerät. Die Sicherung ist eine ZIP-Datei mit allen Inhalten (Rezepte, Wochenpläne, Einkauf, Vorrat, gemerkte Produkte und Läden); die Gemini-Schlüssel sind bewusst nicht enthalten.</p>
+        <div class="key-tools">
+          <button class="btn" @click="downloadBackup()"><span x-icon="'zip'"></span>ZIP herunterladen</button>
+          <button class="btn" x-show="canShareFiles" @click="shareBackup()"><span x-icon="'share-file'"></span>Teilen, z. B. an Drive</button>
+          <label class="btn">
+            <span x-icon="'upload'"></span>Sicherung einspielen
+            <input type="file" accept=".zip,application/zip,application/json,.json" class="sr-only" @change="uploadBackup($event)">
+          </label>
+        </div>
+      </section>
+
+      <section class="block">
+        <h3 class="block-title">Google Drive</h3>
+        <p class="block-text">Direkt in den Ordner „Week Planner Sicherungen" in Google Drive speichern. Dafür einmalig eine OAuth-Client-ID eintragen (Anleitung in task.md). Ohne Client-ID klappt es auf dem Handy auch über „Teilen" → Drive.</p>
+        <div class="key-add">
+          <input class="field-input" type="text" x-model="backup.clientId" @change="saveDriveClient()" placeholder="…apps.googleusercontent.com" autocomplete="off" spellcheck="false" aria-label="Google OAuth-Client-ID">
+          <button class="btn btn--primary" @click="driveBackup()" :disabled="backup.busy || !backup.clientId.trim()">
+            <span x-show="!backup.busy" x-icon="'cloud'"></span><span x-show="backup.busy" class="spin" x-icon="'spinner'"></span>In Drive sichern
+          </button>
+        </div>
+        <p class="block-text block-text--fine" x-show="backup.status" x-text="backup.status" role="status"></p>
+        <p class="block-text block-text--fine" x-show="!backup.status && lastDrive" x-text="`Zuletzt gesichert: ${lastDrive}`"></p>
+      </section>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ EINTRAG ÄNDERN (EINKAUF) -->
+<div class="scrim" x-show="isOpen('item')" x-transition.opacity @click="closeLayer('item')" x-cloak></div>
+<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="item-title" x-show="isOpen('item')" x-transition:enter="sheet-enter" x-transition:enter-start="sheet-from" x-transition:leave="sheet-leave" x-transition:leave-end="sheet-from" x-cloak>
+  <template x-if="shopEdit">
+    <div class="sheet-inner">
+      <div class="sheet-head">
+        <h2 id="item-title" class="sheet-title">Eintrag ändern</h2>
+        <button class="round-btn round-btn--quiet" @click="closeLayer('item')" aria-label="Schließen"><span x-icon="'x'"></span></button>
+      </div>
+      <input class="entry-input entry-input--solo" type="text" x-model="shopEdit.name" @keydown.enter.prevent="saveItemEdit()" autocomplete="off" aria-label="Name">
+      <p class="field-label">Laden</p>
+      <div class="quick">
+        <button class="pick" :aria-checked="!shopEdit.store" role="radio" @click="shopEdit.store = null">Ohne Laden</button>
+        <template x-for="st in shopStores" :key="st.id">
+          <button class="pick" :class="{ 'pick--logo': st.logo }" role="radio" :aria-checked="shopEdit.store === st.id" @click="shopEdit.store = st.id" :aria-label="st.name">
+            <span x-show="st.logo" x-html="st.logo || ''"></span><span x-show="!st.logo" x-text="st.name"></span>
+          </button>
+        </template>
+      </div>
+      <p class="field-label">Abteilung <em>gilt künftig für dieses Produkt</em></p>
+      <div class="quick">
+        <template x-for="d in DEPTS" :key="d.key">
+          <button class="chip chip--dept" role="radio" :aria-checked="shopEdit.dept === d.key" @click="shopEdit.dept = d.key"><span x-icon="d.icon"></span><span x-text="d.label"></span></button>
+        </template>
+      </div>
+      <div class="sheet-actions">
+        <button class="btn btn--ghost-danger" @click="deleteFromEdit()"><span x-icon="'trash'"></span>Löschen</button>
+        <button class="btn btn--primary" @click="saveItemEdit()" :disabled="!shopEdit.name.trim()"><span x-icon="'check'"></span>Speichern</button>
+      </div>
+    </div>
+  </template>
+</div>
+
+<!-- ============================================================ LÄDEN -->
+<div class="scrim" x-show="isOpen('store')" x-transition.opacity @click="closeLayer('store')" x-cloak></div>
+<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="store-title" x-show="isOpen('store')" x-transition:enter="sheet-enter" x-transition:enter-start="sheet-from" x-transition:leave="sheet-leave" x-transition:leave-end="sheet-from" x-cloak>
+  <template x-if="storeForm">
+    <div class="sheet-inner">
+      <div class="sheet-head">
+        <h2 id="store-title" class="sheet-title">Laden hinzufügen</h2>
+        <button class="round-btn round-btn--quiet" @click="closeLayer('store')" aria-label="Schließen"><span x-icon="'x'"></span></button>
+      </div>
+      <input class="entry-input entry-input--solo" x-ref="storeInput" type="text" x-model="storeForm.name" @keydown.enter.prevent="saveStore()" placeholder="z. B. Kaufland, Wochenmarkt" autocomplete="off" aria-label="Name des Ladens">
+      <template x-if="db.shopping.stores.length">
+        <div>
+          <p class="field-label">Eigene Läden</p>
+          <ul class="plate-list keys">
+            <template x-for="st in db.shopping.stores" :key="st.id">
+              <li class="key-row"><span class="store-own" x-text="st.name"></span><button class="round-btn round-btn--quiet" @click="deleteStore({ ...st, custom: true })" :aria-label="`${st.name} entfernen`"><span x-icon="'trash'"></span></button></li>
+            </template>
+          </ul>
+        </div>
+      </template>
+      <div class="sheet-actions">
+        <button class="btn btn--primary" @click="saveStore()" :disabled="!storeForm.name.trim()"><span x-icon="'plus'"></span>Hinzufügen</button>
+      </div>
+    </div>
+  </template>
+</div>
+
+<!-- ============================================================ TEXT ZUM KOPIEREN -->
+<div class="scrim" x-show="isOpen('copy')" x-transition.opacity @click="closeLayer('copy')" x-cloak></div>
+<div class="sheet sheet--tall" role="dialog" aria-modal="true" aria-labelledby="copy-title" x-show="isOpen('copy')" x-transition:enter="sheet-enter" x-transition:enter-start="sheet-from" x-transition:leave="sheet-leave" x-transition:leave-end="sheet-from" x-cloak>
+  <template x-if="copySheet">
+    <div class="sheet-inner">
+      <div class="sheet-head">
+        <div class="sheet-head-text">
+          <h2 id="copy-title" class="sheet-title">Wochenplan</h2>
+          <p class="sheet-sub">Automatisches Kopieren blockiert – Text markieren und kopieren.</p>
+        </div>
+        <button class="round-btn round-btn--quiet" @click="closeLayer('copy')" aria-label="Schließen"><span x-icon="'x'"></span></button>
+      </div>
+      <textarea class="field-area copy-area" x-ref="copyArea" readonly x-text="copySheet.text" @focus="$el.select()"></textarea>
+    </div>
+  </template>
+</div>
+
+<!-- ============================================================ VORRAT ÄNDERN -->
+<div class="scrim" x-show="isOpen('pantry-item')" x-transition.opacity @click="closeLayer('pantry-item')" x-cloak></div>
+<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="pantry-title" x-show="isOpen('pantry-item')" x-transition:enter="sheet-enter" x-transition:enter-start="sheet-from" x-transition:leave="sheet-leave" x-transition:leave-end="sheet-from" x-cloak>
+  <template x-if="pantryEdit">
+    <div class="sheet-inner">
+      <div class="sheet-head">
+        <h2 id="pantry-title" class="sheet-title">Vorrat ändern</h2>
+        <button class="round-btn round-btn--quiet" @click="closeLayer('pantry-item')" aria-label="Schließen"><span x-icon="'x'"></span></button>
+      </div>
+      <div class="pantry-edit-row">
+        <input class="entry-input entry-input--solo" type="text" x-model="pantryEdit.name" @keydown.enter.prevent="savePantryEdit()" autocomplete="off" aria-label="Name">
+        <div class="stepper">
+          <button class="qty-btn" @click="pantryEdit.qty = Math.max(0, pantryEdit.qty - 1)" aria-label="Eins weniger"><span x-icon="'minus'"></span></button>
+          <input class="stepper-input" type="text" inputmode="numeric" x-model.number="pantryEdit.qty" @focus="$el.select()" aria-label="Anzahl">
+          <button class="qty-btn" @click="pantryEdit.qty = (Number(pantryEdit.qty) || 0) + 1" aria-label="Eins mehr"><span x-icon="'plus'"></span></button>
+        </div>
+      </div>
+      <p class="field-label">Ort</p>
+      <div class="quick">
+        <template x-for="p in PLACES" :key="p.key">
+          <button class="chip chip--dept" role="radio" :aria-checked="pantryEdit.place === p.key" @click="pantryEdit.place = p.key"><span x-icon="p.icon"></span><span x-text="p.short"></span></button>
+        </template>
+      </div>
+      <div class="sheet-actions">
+        <button class="btn btn--ghost-danger" @click="deletePantryItem()"><span x-icon="'trash'"></span>Löschen</button>
+        <button class="btn btn--primary" @click="savePantryEdit()" :disabled="!pantryEdit.name.trim()"><span x-icon="'check'"></span>Speichern</button>
+      </div>
+    </div>
+  </template>
+</div>
+
+<!-- ============================================================ BRICK-KOMBIS -->
+<div class="scrim" x-show="isOpen('bricks')" x-transition.opacity @click="closeLayer('bricks')" x-cloak></div>
+<div class="sheet sheet--tall" role="dialog" aria-modal="true" aria-labelledby="bricks-title" x-show="isOpen('bricks')" x-transition:enter="sheet-enter" x-transition:enter-start="sheet-from" x-transition:leave="sheet-leave" x-transition:leave-end="sheet-from" x-cloak>
+  <template x-if="bricks">
+    <div class="sheet-inner">
+      <div class="sheet-head">
+        <div class="sheet-head-text">
+          <h2 id="bricks-title" class="sheet-title">Brick-Kombis</h2>
+          <p class="sheet-sub" x-text="`${brickStock.length} Bricks im Vorrat`"></p>
+        </div>
+        <button class="round-btn round-btn--quiet" @click="closeLayer('bricks')" aria-label="Schließen"><span x-icon="'x'"></span></button>
+      </div>
+      <div class="scroller bricks-list">
+        <p class="ai-status" x-show="bricks.busy" x-text="bricks.status" role="status"></p>
+        <template x-if="bricks.busy && !bricks.meals.length">
+          <div class="meal-skeletons"><span></span><span></span><span></span></div>
+        </template>
+        <p class="ai-status is-error" x-show="bricks.error" x-text="bricks.error" role="alert"></p>
+        <template x-for="(m, i) in bricks.meals" :key="m.title + i">
+          <article class="meal">
+            <h3 class="meal-title" x-text="m.title"></h3>
+            <ul class="meal-bricks">
+              <template x-for="b in m.bricks" :key="b.item.id">
+                <li><span class="meal-count" x-text="`${b.count}×`"></span><span x-text="b.item.name"></span><span class="meal-kind" x-text="b.item.place.endsWith('dish') ? 'Gericht' : 'Komponente'"></span></li>
+              </template>
+            </ul>
+            <p class="meal-tip" x-show="m.tip" x-text="m.tip"></p>
+            <button class="text-btn" @click="takeBricks(m)"><span x-icon="'check'"></span>Das gibt's – Bricks entnehmen</button>
+          </article>
+        </template>
+      </div>
+      <div class="sheet-actions">
+        <button class="btn" @click="suggestBricks()" :disabled="bricks.busy"><span x-icon="'sparkles'"></span>Andere Vorschläge</button>
+      </div>
+    </div>
+  </template>
+</div>
+
+<!-- ============================================================ BESTÄTIGUNG -->
+<div class="scrim scrim--center" x-show="isOpen('confirm')" x-transition.opacity x-cloak @click.self="answerConfirm(false)">
+  <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" x-show="isOpen('confirm')" x-transition.scale.95>
+    <template x-if="confirmBox">
+      <div>
+        <h2 id="confirm-title" class="dialog-title" x-text="confirmBox.title"></h2>
+        <p class="dialog-text" x-text="confirmBox.text"></p>
+        <div class="dialog-actions">
+          <button class="btn" @click="answerConfirm(false)">Abbrechen</button>
+          <button class="btn" :class="confirmBox.ok === 'Löschen' ? 'btn--danger' : 'btn--primary'" @click="answerConfirm(true)" x-text="confirmBox.ok"></button>
+        </div>
+      </div>
+    </template>
+  </div>
+</div>
+
+<!-- ============================================================ MELDUNG -->
+<div class="toast-wrap" aria-live="polite">
+  <template x-if="toast">
+    <div class="toast" :class="`is-${toast.tone}`" x-transition:enter="toast-enter" x-transition:enter-start="toast-from">
+      <span class="toast-text" x-text="toast.text"></span>
+      <button class="toast-undo" x-show="toast.undo" @click="undoToast()"><span x-icon="'undo'"></span>Rückgängig</button>
+    </div>
+  </template>
+</div>
+</body>
+</html>
