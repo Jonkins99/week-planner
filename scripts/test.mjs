@@ -9,9 +9,9 @@ import { videoEmbed, findVideoUrl } from '../resources/js/video.mjs';
 import { sanitizeImport } from '../resources/js/recipe-ai.mjs';
 import { generateJson } from '../resources/js/gemini.mjs';
 import { addItem, groupItems, emptyShopping, addStore, removeStore, setDept, suggestProducts, storeByName, sanitizeShopping } from '../resources/js/shopping.mjs';
-import { readVoice } from '../resources/js/shopping-ai.mjs';
+import { readVoice, voiceSchema, NO_STORE } from '../resources/js/shopping-ai.mjs';
 import { addPantryItem, pantryTree, emptyPantry } from '../resources/js/pantry.mjs';
-import { readBrickMeals } from '../resources/js/pantry-ai.mjs';
+import { readBrickMeals, brickSchema } from '../resources/js/pantry-ai.mjs';
 import { buildBackupZip, readBackupFile } from '../resources/js/backup.mjs';
 import { checkPassword } from '../resources/js/auth.mjs';
 import { updateEntry, emptyState } from '../resources/js/model.mjs';
@@ -193,6 +193,53 @@ test('Gemini: Schlüsselrotation bei 429', async () => {
   const out = await generateJson({ keys: ['AIzaERSTER', 'AIzaZWEITER'], models: ['gemini-3.5-flash-lite', 'gemini-3.8-flash'], prompt: 'x' });
   assert.deepEqual(out, { ok: true });
   assert.deepEqual(calls, ['AIzaERSTER@gemini-3.5-flash-lite', 'AIzaZWEITER@gemini-3.5-flash-lite']);
+
+
+  // Überlastung (503) liegt am Modell: nicht den zweiten Schlüssel quälen, sondern weiter.
+  calls.length = 0;
+  const ok = new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '{"ok":true}' }] }, finishReason: 'STOP' }] }), { status: 200 });
+  globalThis.fetch = async (url, init) => {
+    const model = url.match(/models\/([^:]+)/)[1];
+    calls.push(`${init.headers['x-goog-api-key']}@${model}`);
+    if (model === 'gemini-3.5-flash-lite') return new Response(JSON.stringify({ error: { message: 'overloaded' } }), { status: 503 });
+    return ok.clone();
+  };
+  await generateJson({ keys: ['AIzaA', 'AIzaB'], models: ['gemini-3.5-flash-lite', 'gemini-3.8-flash'], prompt: 'x' });
+  assert.deepEqual(calls, ['AIzaA@gemini-3.5-flash-lite', 'AIzaA@gemini-3.8-flash']);
+
+  // Ein 400er ohne Schema-Bezug hängt am Schlüssel: nächster Schlüssel, gleiches Modell.
+  calls.length = 0;
+  globalThis.fetch = async (url, init) => {
+    const key = init.headers['x-goog-api-key'];
+    calls.push(key);
+    if (key === 'AIzaA') return new Response(JSON.stringify({ error: { message: 'Billing not enabled', status: 'FAILED_PRECONDITION' } }), { status: 400 });
+    return ok.clone();
+  };
+  await generateJson({ keys: ['AIzaA', 'AIzaB'], models: ['gemini-3.5-flash-lite'], prompt: 'x' });
+  assert.deepEqual(calls, ['AIzaA', 'AIzaB']);
+
+  // Hängt ein Modell, greift der Zeitdeckel und das nächste Modell übernimmt.
+  calls.length = 0;
+  globalThis.fetch = (url, init) => {
+    const model = url.match(/models\/([^:]+)/)[1];
+    calls.push(model);
+    if (model === 'gemini-3.8-flash') return new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(Object.assign(new Error('abort'), { name: 'AbortError' }))));
+    return Promise.resolve(ok.clone());
+  };
+  await generateJson({ keys: ['AIzaA'], models: ['gemini-3.8-flash', 'gemini-3.7-flash'], prompt: 'x', timeoutMs: 50 });
+  assert.deepEqual(calls, ['gemini-3.8-flash', 'gemini-3.7-flash']);
+});
+
+test('Gemini-Schemas: keine leeren Enum-Werte', () => {
+  const walk = (node) => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node.enum)) assert.ok(node.enum.length && node.enum.every((v) => String(v).length), JSON.stringify(node.enum));
+    Object.values(node).forEach(walk);
+  };
+  walk(voiceSchema(['Lidl', 'Edeka']));
+  walk(voiceSchema([]));
+  walk(brickSchema([{ name: 'Reis', qty: 2, place: 'freezer/bricks/component' }]));
+  assert.equal(readVoice({ items: [{ name: 'Milch', quantity: 0, store: NO_STORE, dept: 'Kühlung' }] })[0].store, '');
 });
 
 test('Seed: Altbestand vollständig', () => {

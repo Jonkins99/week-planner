@@ -282,3 +282,56 @@ Falls es danach immer noch nicht klappt: bitte den Inhalt von `chrome://webapks`
 ```
 
 Die beiden PNGs müssen dafür im ausgelieferten Wurzelordner der JH Draft League liegen (bei Vite also in `public/`). Damit beansprucht die Liga nur noch ihren eigenen Ordner.
+
+============
+
+4.zip:
+- Die Anpassung in der JHDL ist durch, aber es können immer noch nicht beide Apps installiert werden. Die Installation erkennt wohl rein an der Sub- und Hauptdomain Duplikate. Falls du noch irgendeine Idee haben solltest, setze sie gerne um
+- Wann immer ich die Audio-Funktion bei Einkauf nutze kommt die Fehlermeldung "Anfrage fehlgeschlagen (HTTP 400). (GenerateContentRequest.generation_config.response_schema.properties[items].items.properties[store]. ... cannot be empty"
+  - Fixe das unbedingt
+- Vorrat => Lego Bricks => Kombis vorschlagen: Diese KI Funktion scheint ebenfalls im Timeouts zu laufen, es lädt unfassbar lang für so eine kleine Aufgabe
+- Mach die Reiter oben (Einkauf, Rezepte, Vorrat, ...) mit den Suchleisten ein bisschen flacher, damit man mehr Hauptfläche zur Verfügung stehen hat. Entferne im Footer außerdem aus selbigem Grund die Texte im der Navigation, die Icons reichen und lass sie dadurch niedriger werden
+- Beim Text "Mit Rezept verknüpft" soll dieses auch verlinkt werden
+- Es muss sichergestellt sein, dass wenn ein Gemini API Schlüssel in ein Limit läuft direkt ein anderer genutzt wird. Ich habe aber das 
+
+---
+
+## Status Runde 6 (Claude)
+
+Neu: **week-planner-4.zip** (nur die Änderungen seit week-planner-3.zip).
+
+**Hinweis vorab:** Der letzte Punkt in deinem Auftrag bricht mitten im Satz ab („Ich habe aber das …"). Ich habe die Schlüssel-Rotation trotzdem abgesichert (siehe unten). Falls noch etwas gefehlt hat, bitte den Satz hier ergänzen.
+
+- **Spracheingabe Einkauf (HTTP 400):** Ursache war ein leerer Eintrag („kein Laden" als leerer Text) in der Antwortvorgabe an Gemini. So etwas lehnt die API grundsätzlich ab. Jetzt steht dort „Kein Laden", die App macht daraus wieder „ohne Laden". Ein Test prüft alle Antwortvorgaben auf diesen Fehler.
+- **Brick-Kombis zu langsam:** Drei Ursachen behoben. (1) Das Modell durfte vorher lange „nachdenken", jetzt nur noch minimal. (2) Schrieb das Modell einen Brick-Namen leicht anders (etwa mit Ort dahinter), fiel der Vorschlag durch und es wurde bis zu dreimal neu gefragt. Jetzt kann es nur exakt eure Brick-Namen wählen. (3) Es gab keine Zeitgrenze. Antwortet ein Modell nicht innerhalb von 25 s, übernimmt sofort das nächste.
+- **Schlüssel-Rotation:** Läuft ein Schlüssel ins Limit (HTTP 429), nimmt die App sofort den nächsten Schlüssel, ohne zu warten, und merkt sich die Sperre bis zum Zurücksetzen des Kontingents. Neu: Auch andere schlüsselbezogene Fehler (z. B. Abrechnung/Projekt) wechseln jetzt zum nächsten Schlüssel statt abzubrechen. Ist ein Modell überlastet oder hängt es, geht es direkt zum nächsten Modell, statt alle Schlüssel am selben überlasteten Modell durchzuprobieren. Jede Anfrage hat jetzt eine Zeitgrenze (30 s, Rezept-Import und Sprache 45 s). Alles mit Tests abgedeckt.
+  - **Wichtig:** Die kostenlosen Kontingente zählt Google **pro Google-Cloud-Projekt**, nicht pro Schlüssel. Zwei Schlüssel aus demselben Projekt teilen sich ein Limit, da hilft keine Rotation. Für echte Ausweichmöglichkeit muss jeder Schlüssel aus einem **eigenen Projekt** stammen (in AI Studio „Create API key" → „in new project", oder von einem anderen Google-Konto).
+- **Kopfleisten flacher:** Einkauf, Rezepte und Vorrat haben eine kompaktere Kopfleiste. Bei Rezepten stehen Suche und Sortierung (Stern / A–Z als Symbole) jetzt in einer Zeile. Die Kopfleiste ist dadurch von etwa 180 auf etwa 105 Pixel geschrumpft. Die Wochenplan-Kopfleiste ist auch etwas niedriger.
+- **Fußleiste:** Nur noch Icons, Höhe von 68 auf 50 Pixel. Der Name steckt weiter unsichtbar im Knopf (für Screenreader und als Tooltip).
+- **„Mit Rezept verknüpft"** ist jetzt ein Link: Antippen speichert den Eintrag und öffnet das Rezept.
+- Kleinigkeit: Ein harmloser Konsolenfehler bei schnell aufeinanderfolgenden Ansichtswechseln ist behoben. Der Service-Worker-Cache steht auf v4, damit die Handys den neuen Stand sofort laden.
+
+**Installation neben der JH Draft League:**
+Deine Vermutung stimmt. Chrome auf Android behandelt alles unter `jonkins99.github.io` als dieselbe Herkunft und zeigt bei einer zweiten Web-App aus dieser Herkunft in der Praxis „bereits installiert". Daran ändert auch die beste Manifest-Einstellung nichts mehr, das haben wir mit Runde 4 und 5 ausgereizt. Sicher funktioniert es nur, wenn der Week Planner von einer **eigenen Adresse** kommt. Der kostenlose Weg ohne eigene Domain:
+
+1. Auf GitHub oben rechts „+" → **New organization** → Plan „Free". Name z. B. `elika-janik` (frei wählbar).
+2. In dieser Organisation ein Repository mit genau dem Namen `elika-janik.github.io` anlegen (Name der Organisation + `.github.io`).
+3. Den Projektstand dort hineinpushen und unter Settings → Pages wie bisher „Deploy from branch", Ordner `/docs` einstellen.
+4. Die App läuft dann unter `https://elika-janik.github.io/`, also einer eigenen Herkunft. Damit ist sie für Android eine völlig getrennte App und lässt sich neben der JH Draft League installieren.
+
+Am Code muss dafür nichts geändert werden, er funktioniert unter jeder Adresse. Zu beachten:
+- Die Daten liegen pro Adresse im Browser. Vorher in der alten Version unter Einstellungen „ZIP herunterladen" und in der neuen Adresse „Sicherung einspielen". Gemini-Schlüssel und Passwort-Freischaltung müssen neu eingegeben werden.
+- Falls ihr Google Drive nutzt: in der Google Cloud Console die neue Adresse bei „Autorisierte JavaScript-Ursprünge" ergänzen.
+- Das alte Repository `week-planner` kann danach gelöscht oder Pages dort abgeschaltet werden.
+- Alternativ ginge auch eine eigene (Sub-)Domain, falls ihr eine habt, z. B. `plan.eure-domain.de`.
+
+Wenn du lieber bei der jetzigen Adresse bleiben willst, gibt es nur den Umweg, eine der beiden Apps als einfache Verknüpfung („Zum Startbildschirm hinzufügen") anzulegen.
+
+**Befehle auf dem anderen Laptop** (nach dem Entpacken von week-planner-4.zip über den bestehenden Stand):
+
+```bash
+npm test
+npm run build
+```
+
+(`npm install` ist nicht nötig.) Danach `docs/` committen und pushen.

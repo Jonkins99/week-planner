@@ -15,8 +15,8 @@
   <link rel="icon" type="image/png" sizes="48x48" href="./icons/favicon-48.png">
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
   <style>html,body{color:#14203f;background:#e7ecf3;margin:0}@media (prefers-color-scheme:dark){html,body{color:#eef2fb;background:#0d1322}}[x-cloak]{display:none!important}</style>
-  <script type="module" crossorigin src="./assets/index-BZHvgfFr.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-UVGlkVGE.css">
+  <script type="module" crossorigin src="./assets/index-CS64qDmh.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-CQCF7NJ6.css">
 </head>
 <body x-data="app" :class="{ 'has-layer': layers.some(l => l !== 'menu' && l !== 'detail'), 'is-composing': shopFocus && (tab === 'shop' || tab === 'pantry'), 'on-shop': tab === 'shop' || tab === 'pantry' }">
 <!--
@@ -241,8 +241,8 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
             <button class="search-clear" x-show="recipeQuery" @click="recipeQuery = ''" aria-label="Suche leeren"><span x-icon="'x'"></span></button>
           </label>
           <div class="segmented" role="radiogroup" aria-label="Sortierung" x-show="!recipeQuery.trim()">
-            <button role="radio" :aria-checked="recipeSort === 'rating'" @click="recipeSort = 'rating'"><span x-icon.fill="'star'"></span>Bewertung</button>
-            <button role="radio" :aria-checked="recipeSort === 'alpha'" @click="recipeSort = 'alpha'"><span x-icon="'az'"></span>A–Z</button>
+            <button role="radio" :aria-checked="recipeSort === 'rating'" @click="recipeSort = 'rating'" aria-label="Nach Bewertung" title="Nach Bewertung"><span x-icon.fill="'star'"></span></button>
+            <button role="radio" :aria-checked="recipeSort === 'alpha'" @click="recipeSort = 'alpha'" aria-label="Alphabetisch" title="Alphabetisch"><span x-icon="'az'"></span></button>
           </div>
         </div>
       </header>
@@ -439,9 +439,8 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 
   <nav class="tabbar" aria-label="Hauptnavigation">
     <template x-for="t in TABS" :key="t.key">
-      <button class="tab" :class="{ 'is-active': tab === t.key }" :aria-current="tab === t.key ? 'page' : null" @click="setTab(t.key)">
+      <button class="tab" :class="{ 'is-active': tab === t.key }" :aria-current="tab === t.key ? 'page' : null" :aria-label="t.label" :title="t.label" @click="setTab(t.key)">
         <span class="tab-pill"><span x-icon="t.icon"></span></span>
-        <span class="tab-label" x-text="t.label"></span>
       </button>
     </template>
   </nav>
@@ -474,7 +473,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
                role="combobox" aria-autocomplete="list" aria-controls="entry-suggestions" :aria-expanded="entryOptions.length > 0">
         <button class="entry-clear" x-show="entry.title" @click="entry.title = ''; entry.recipeId = null; $refs.entryInput.focus()" aria-label="Eingabe leeren"><span x-icon="'x'"></span></button>
       </div>
-      <p class="entry-linked" x-show="entry.recipeId"><span x-icon="'recipe'"></span>Mit Rezept verknüpft</p>
+      <p class="entry-linked" x-show="entry.recipeId"><span x-icon="'recipe'"></span><button type="button" class="entry-linked-link" @click="entryOpenRecipe()">Mit Rezept verknüpft</button></p>
       <div class="entry-note" x-show="entry.noteOpen">
         <span class="entry-note-icon" x-icon="'note'"></span>
         <input x-ref="noteInput" type="text" x-model="entry.note" @keydown.enter.prevent="saveEntry()" placeholder="Notiz, z. B. „Doppelte Menge als Meal Prep“" autocomplete="off" aria-label="Notiz zum Gericht">

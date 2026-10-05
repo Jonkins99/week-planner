@@ -3,7 +3,7 @@
 // Gebaute Dateien (gehashte Namen) und Schriften: aus dem Cache, im Hintergrund erneuert.
 // Fremde Hosts (Gemini, YouTube, Instagram) laufen unberührt am Cache vorbei.
 
-const CACHE = 'week-planner-v3';
+const CACHE = 'week-planner-v4';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(['./', './index.html'])).catch(() => {}));

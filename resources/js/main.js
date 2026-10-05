@@ -17,7 +17,7 @@ import { isUnlocked, checkPassword, rememberUnlock } from './auth.mjs';
 import { buildBackupZip, readBackupFile, backupName } from './backup.mjs';
 import { uploadToDrive } from './drive.mjs';
 import { PLACES, MAINS, placeOf, isBrick, addPantryItem, pantryTree } from './pantry.mjs';
-import { BRICK_SYSTEM, BRICK_SCHEMA, brickPrompt, readBrickMeals, brickModels } from './pantry-ai.mjs';
+import { BRICK_SYSTEM, brickSchema, brickPrompt, readBrickMeals, brickModels } from './pantry-ai.mjs';
 import {
   DEPTS, allStores, storeById, storeByName, addStore, removeStore, addItem, setDept, groupItems,
   withDeptHeads, suggestProducts, keyOf,
@@ -92,7 +92,9 @@ function viewTransition(update, dir = 'none') {
     update();
     return new Promise((resolve) => Alpine.nextTick(resolve));
   });
-  t.finished.finally(() => { delete document.documentElement.dataset.vt; });
+  // Folgt direkt ein zweiter Wechsel, wird der erste übersprungen: das ist kein Fehler.
+  t.ready.catch(() => {});
+  t.finished.catch(() => {}).finally(() => { delete document.documentElement.dataset.vt; });
 }
 
 // Langes Drücken (Touch oder Maus). Der darauffolgende Klick wird geschluckt.
@@ -764,6 +766,14 @@ Alpine.data('app', () => ({
     if (f.asRecipe && !f.recipeId) this.notify(`„${title}" auch als Rezept gespeichert`, { tone: 'ok' });
   },
 
+  // Verknüpftes Rezept aus dem Eintragen-Fenster öffnen: Eingabe wird dabei gespeichert.
+  entryOpenRecipe() {
+    const id = this.entry?.recipeId;
+    if (!id || !this.recipesById[id]) return;
+    this.saveEntry();
+    this.showRecipe(id);
+  },
+
   deleteEntryFromSheet() {
     const f = this.entry;
     this.closeLayer('entry');
@@ -1005,6 +1015,7 @@ Alpine.data('app', () => ({
         temperature: 0.3,
         maxOutputTokens: 4096,
         thinking: 'low',
+        timeoutMs: 45000,
         accept: acceptImport,
         signal: this._importAbort.signal,
         onRetry: ({ next }) => { if (next) ed.status = `Weiter mit ${modelLabel(next)} …`; },
@@ -1340,7 +1351,7 @@ Alpine.data('app', () => ({
       const data = await generateJson({
         keys: this.settings.keys, models: brickModels(), quota,
         system: BRICK_SYSTEM, prompt: `${brickPrompt(items)}${box.meals.length ? `\n\nBitte andere Ideen als: ${box.meals.map((m) => m.title).join(', ')}.` : ''}`,
-        schema: BRICK_SCHEMA, temperature: 1, maxOutputTokens: 4096, thinking: 'low',
+        schema: brickSchema(items), temperature: 1, maxOutputTokens: 2048, thinking: 'minimal', timeoutMs: 25000,
         accept: (d) => readBrickMeals(d, items).length >= 3,
         onRetry: ({ next }) => { if (next) box.status = `Weiter mit ${modelLabel(next)} …`; },
       });
@@ -1651,7 +1662,7 @@ Alpine.data('app', () => ({
         system: voiceSystem(stores), schema: voiceSchema(stores),
         prompt: `Erstelle die Einkaufseinträge aus der Aufnahme.${this.shopStore ? ` Ohne genannten Laden gilt: ${this.storeOf(this.shopStore)?.name}.` : ''}`,
         media: [{ mimeType: blob.type.split(';')[0] || 'audio/webm', data: await blobToBase64(blob) }],
-        temperature: 0.2, maxOutputTokens: 4096, thinking: 'low',
+        temperature: 0.2, maxOutputTokens: 4096, thinking: 'minimal', timeoutMs: 45000,
         onRetry: ({ next }) => { if (next) this.rec.text = `Weiter mit ${modelLabel(next)} …`; },
       });
       const items = readVoice(data);

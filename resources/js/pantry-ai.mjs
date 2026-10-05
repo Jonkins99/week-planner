@@ -17,22 +17,28 @@ Regeln:
 - Variiere über die 5 Vorschläge hinweg; jeder Vorschlag soll anders schmecken.
 - title: kurzer, appetitlicher Name. tip: ein Satz, was frisch dazu passt oder wie man es kombiniert (z. B. „Mit Frühlingszwiebeln und Sojasauce verfeinern").`;
 
-export const BRICK_SCHEMA = schemaOf({
-  meals: S.array(S.object({
-    title: S.string('Name der Mahlzeit'),
-    bricks: S.array(S.object({ name: S.string('Brick-Name wie in der Liste'), count: S.number('Stück') }, ['name', 'count']), '2 bis 3 Bricks'),
-    tip: S.string('Ein Satz Tipp'),
-  }, ['title', 'bricks', 'tip']), 'Genau 5 Mahlzeiten'),
-}, ['meals']);
+const stock = (items) => items.filter((it) => isBrick(it) && it.qty > 0);
+
+// Die Brick-Namen stehen als Enum im Schema: so kann das Modell keine Namen abwandeln
+// (etwa den Ort aus der Liste mitschreiben) und keine Antwort fällt deshalb durch.
+export function brickSchema(items) {
+  const names = [...new Set(stock(items).map((it) => it.name))];
+  return schemaOf({
+    meals: S.array(S.object({
+      title: S.string('Name der Mahlzeit'),
+      bricks: S.array(S.object({ name: S.enum(names, 'Brick aus der Liste'), count: S.number('Stück') }, ['name', 'count']), '2 bis 3 Bricks'),
+      tip: S.string('Ein Satz Tipp'),
+    }, ['title', 'bricks', 'tip']), 'Genau 5 Mahlzeiten'),
+  }, ['meals']);
+}
 
 export function brickPrompt(items) {
-  const lines = items.filter((it) => isBrick(it) && it.qty > 0)
-    .map((it) => `- ${it.name} (${placeOf(it.place).label}, ${it.qty} Stück)`);
+  const lines = stock(items).map((it) => `- ${it.name}: ${placeOf(it.place).label}, ${it.qty} Stück`);
   return `Vorrätige Bricks:\n${lines.join('\n')}`;
 }
 
 export function readBrickMeals(data, items) {
-  const names = new Map(items.filter(isBrick).map((it) => [it.name.toLowerCase(), it]));
+  const names = new Map(items.filter(isBrick).map((it) => [it.name.toLowerCase().trim(), it]));
   return (Array.isArray(data?.meals) ? data.meals : [])
     .map((m) => ({
       title: String(m?.title || '').trim(),

@@ -225,7 +225,7 @@ function parseJson(text) {
 // Ein einzelner Anlauf. Die Wiederholung liegt eine Ebene darüber in `generateJson`.
 async function attemptGenerate({
   apiKey, model = DEFAULT_MODEL, system, prompt, schema, media = null,
-  temperature = 1.15, maxOutputTokens = 4096, signal = null, thinking = null,
+  temperature = 1.15, maxOutputTokens = 4096, signal = null, thinking = null, timeoutMs = 30000,
 }) {
   if (!apiKey) throw new GeminiError('Kein API-Key hinterlegt.');
 
@@ -260,19 +260,33 @@ async function attemptGenerate({
 
   const url = `${ENDPOINT}/${encodeURIComponent(model)}:generateContent`;
   const send = async (scheme, payload) => {
+    // Eigener Zeitdeckel je Anlauf: ein hängendes Modell soll nicht die ganze Anfrage
+    // blockieren, sondern an das nächste Modell abgeben. Ein Abbruch von außen bleibt
+    // ein echter Abbruch.
+    const ctrl = new AbortController();
+    const onAbort = () => ctrl.abort();
+    signal?.addEventListener?.('abort', onAbort, { once: true });
+    if (signal?.aborted) ctrl.abort();
+    const timer = timeoutMs > 0 ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
     let res;
     try {
       res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader(apiKey, scheme) },
         body: JSON.stringify(payload),
-        signal,
+        signal: ctrl.signal,
       });
+      if (res.ok) return { res, data: await res.json() };
     } catch (e) {
-      if (e?.name === 'AbortError') throw e;
+      if (signal?.aborted) throw e;
+      if (e?.name === 'AbortError') {
+        throw new GeminiError(`${model} antwortet zu langsam.`, { detail: String(e), retryable: true, model, status: 408 });
+      }
       throw new GeminiError('Gemini ist nicht erreichbar (Netzwerkfehler).', { detail: String(e), retryable: true, model });
+    } finally {
+      if (timer) clearTimeout(timer);
+      signal?.removeEventListener?.('abort', onAbort);
     }
-    if (res.ok) return { res, data: await res.json() };
     let detail = '';
     let reason = '';
     let details = [];
@@ -378,7 +392,8 @@ function clockOf(ms) {
  *   nur noch Minutenkontingente gesperrt, wird einmal gewartet und neu angesetzt.
  * - Schlüssel untauglich: der Schlüssel fällt für alle Modelle aus.
  * - Modell unbekannt (404): nur diese Kombination fällt aus.
- * - Überlastung, Serverfehler, Netz: ein zweiter Anlauf nach kurzer Pause, dann weiter.
+ * - Überlastung, Serverfehler, Netz, Zeitdeckel (`timeoutMs`, 30 s): sofort das nächste Modell.
+ * - Sonstiger 400er: hängt am Schlüssel, also nächster Schlüssel; Schema-Fehler: nächstes Modell.
  * - Abgeschnitten, leer, unlesbar, von `accept` verworfen: bis zu `attempts` Anläufe auf
  *   derselben Kombination, jeweils mit mehr Platz und weniger Denkzeit.
  * - Alles andere (Inhaltsfilter, kaputte Anfrage) fliegt sofort hoch.
@@ -425,7 +440,6 @@ export async function generateJson(opts) {
       const c = open[i];
       if (isBlocked(c) || refused.has(c.model)) continue;
       let local429 = null;
-      let transient = 0;
       let bad = null;
       for (let tries = 1; tries <= attempts; tries++) {
         attemptNo++;
@@ -457,20 +471,20 @@ export async function generateJson(opts) {
             block(c, Date.now() + 6 * 3600000, 'model', e.message);
             break;
           }
-          // Ein anderes Modell kennt vielleicht, was dieses abweist (Schema, Parameter).
-          // Nur der Inhaltsfilter und eine blockierte Anfrage fliegen sofort hoch.
+          // Weist das Modell die Anfrage selbst ab (Schema, Parameter), hilft ein anderer
+          // Schlüssel nicht, ein anderes Modell vielleicht. Jeder sonstige 400er (Abrechnung,
+          // Region, Projekt) hängt am Schlüssel: dann gleich der nächste.
           if (e?.status === 400) {
-            refused.add(c.model);
+            if (/schema|generation_?config|Invalid JSON payload|Unknown name|thinking|response_mime/i.test(e.detail || '')) refused.add(c.model);
+            else block(c, Date.now() + 3600000, 'key', e.message);
             break;
           }
           if (!e?.retryable) throw e;
           if (e.status >= 500 || e.status === 408 || (!e.status && /Netzwerk/.test(e.message))) {
-            // Überlastet: einmal kurz warten, dann lieber ein anderes Modell.
-            transient++;
-            if (transient >= 2) break;
-            notify(e, c, c);
-            await wait(Math.round(1200 * (0.8 + Math.random() * 0.4)));
-            continue;
+            // Überlastung und Zeitüberschreitung liegen am Modell, nicht am Schlüssel:
+            // nicht warten, sondern für diesen Aufruf direkt zum nächsten Modell.
+            refused.add(c.model);
+            break;
           }
           bad = e;
           if (tries < attempts) {

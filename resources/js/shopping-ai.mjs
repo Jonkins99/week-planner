@@ -45,18 +45,21 @@ export function voiceSystem(storeNames) {
 Mache daraus einzelne Einträge.
 - name: Produkt kurz und natürlich, Singular- oder übliche Packungsform, erster Buchstabe groß („Milch", „Bananen", „Tomaten passiert"). Keine Mengen im Namen.
 - quantity: Stückzahl oder Packungen als Ganzzahl, wenn genannt („zwei Packungen Butter" -> 2), sonst 0. Gewichte wie „500 Gramm Hack" gehören als Zusatz in den Namen („Hackfleisch 500 g") und quantity bleibt 0.
-- store: einer dieser Läden in genau dieser Schreibweise, wenn für das Produkt (oder für eine Gruppe von Produkten) ein Laden genannt wurde, sonst leerer String: ${storeNames.join(', ')}.
+- store: einer dieser Läden in genau dieser Schreibweise, wenn für das Produkt (oder für eine Gruppe von Produkten) ein Laden genannt wurde, sonst „${NO_STORE}": ${storeNames.join(', ')}.
 - dept: die passende Abteilung.
 ${DEPT_RULES}
 Wird etwas zurückgenommen („nee, doch keine Eier"), lass es weg. Ist nichts Verwertbares zu hören, gib eine leere Liste zurück.`;
 }
+
+// Leere Strings sind in einem Schema-Enum nicht erlaubt (HTTP 400), daher ein Platzhalter.
+export const NO_STORE = 'Kein Laden';
 
 export function voiceSchema(storeNames) {
   return schemaOf({
     items: S.array(S.object({
       name: S.string('Produkt'),
       quantity: S.number('Anzahl oder 0'),
-      store: S.enum(['', ...storeNames], 'Laden oder leer'),
+      store: S.enum([...new Set([NO_STORE, ...storeNames.filter(Boolean)])], 'Laden oder „Kein Laden"'),
       dept: S.enum(DEPT_LABELS, 'Abteilung'),
     }, ['name', 'quantity', 'store', 'dept']), 'Einträge'),
   }, ['items']);
@@ -67,7 +70,7 @@ export function readVoice(data) {
     .map((it) => ({
       name: String(it?.name || '').replace(/\s+/g, ' ').trim(),
       qty: Math.max(0, Math.round(Number(it?.quantity) || 0)),
-      store: String(it?.store || '').trim(),
+      store: String(it?.store || '').trim() === NO_STORE ? '' : String(it?.store || '').trim(),
       dept: deptByLabel(it?.dept),
     }))
     .filter((it) => it.name);

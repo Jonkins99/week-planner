@@ -38,7 +38,7 @@
 
   --font: "Archivo Variable", "Archivo", ui-sans-serif, system-ui, sans-serif;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --tabbar-h: 68px;
+  --tabbar-h: 50px;
 
   color-scheme: light;
 }
@@ -201,7 +201,7 @@
     z-index: 2;
     flex: none;
     margin: 0 8px;
-    padding: calc(env(safe-area-inset-top) + 12px) 12px 12px;
+    padding: calc(env(safe-area-inset-top) + 6px) 10px 8px;
     background: var(--rim);
     color: var(--on-rim);
     border-radius: 0 0 24px 24px;
@@ -270,7 +270,7 @@
   }
 
   .sign-kw {
-    font-size: 2rem;
+    font-size: 1.75rem;
     font-weight: 820;
     font-stretch: 72%;
     letter-spacing: 0.01em;
@@ -297,8 +297,8 @@
     justify-content: center;
     flex-wrap: wrap;
     gap: 8px;
-    min-height: 30px;
-    margin-top: 6px;
+    min-height: 26px;
+    margin-top: 2px;
     font-size: 0.78rem;
     font-weight: 620;
     letter-spacing: 0.06em;
@@ -314,7 +314,7 @@
   }
 
   .sign-today {
-    height: 30px;
+    height: 26px;
     padding: 0 12px;
     border: 0;
     border-radius: 15px;
@@ -327,18 +327,23 @@
   }
 
   .sign--plain {
-    padding-bottom: 14px;
+    padding-bottom: 10px;
+  }
+
+  .sign--plain .sign-tool {
+    width: 40px;
+    height: 40px;
   }
 
   .sign-title {
     flex: 1;
     margin: 0 0 0 6px;
-    font-size: 1.85rem;
+    font-size: 1.55rem;
     font-weight: 820;
     font-stretch: 72%;
     letter-spacing: 0.01em;
     text-transform: uppercase;
-    line-height: 44px;
+    line-height: 40px;
   }
 
   .sign-count {
@@ -668,18 +673,17 @@
     z-index: 30;
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    padding: 6px 6px calc(env(safe-area-inset-bottom) + 6px);
+    padding: 5px 6px calc(env(safe-area-inset-bottom) + 5px);
     background: var(--rim);
-    border-radius: 22px 22px 0 0;
+    border-radius: 20px 20px 0 0;
   }
 
   .tab {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 3px;
-    min-height: 56px;
-    padding: 4px 0 2px;
+    justify-content: center;
+    min-height: 40px;
     border: 0;
     background: none;
     color: var(--on-rim-2);
@@ -688,21 +692,15 @@
   .tab-pill {
     display: grid;
     place-items: center;
-    width: 58px;
-    height: 30px;
-    border-radius: 15px;
+    width: 60px;
+    height: 34px;
+    border-radius: 17px;
     transition: background-color 220ms var(--ease-out), color 220ms var(--ease-out);
   }
 
   .tab-pill .icon {
     width: 22px;
     height: 22px;
-  }
-
-  .tab-label {
-    font-size: 0.72rem;
-    font-weight: 620;
-    letter-spacing: 0.02em;
   }
 
   .tab.is-active {
@@ -714,24 +712,24 @@
     color: #1b2440;
   }
 
-  .tab.is-active .tab-label {
-    font-weight: 760;
-  }
-
   .finder {
     display: flex;
-    flex-direction: column;
-    gap: 10px;
-    margin-top: 10px;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  .finder .search {
+    flex: 1;
+    min-width: 0;
   }
 
   .search {
     display: flex;
     align-items: center;
     gap: 8px;
-    height: 48px;
-    padding: 0 6px 0 14px;
-    border-radius: 14px;
+    height: 42px;
+    padding: 0 4px 0 12px;
+    border-radius: 13px;
     background: var(--plate);
     color: var(--ink);
   }
@@ -760,8 +758,8 @@
   .search-clear {
     display: grid;
     place-items: center;
-    width: 38px;
-    height: 38px;
+    width: 34px;
+    height: 34px;
     border: 0;
     border-radius: 50%;
     background: var(--plate-2);
@@ -770,6 +768,7 @@
 
   .segmented {
     display: grid;
+    flex: none;
     grid-template-columns: 1fr 1fr;
     padding: 3px;
     border-radius: 13px;
@@ -781,6 +780,7 @@
     align-items: center;
     justify-content: center;
     gap: 6px;
+    width: 40px;
     height: 36px;
     border: 0;
     border-radius: 10px;
@@ -791,8 +791,8 @@
   }
 
   .segmented button .icon {
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
   }
 
   .segmented button[aria-checked="true"] {
@@ -1586,6 +1586,16 @@
   .entry-linked .icon {
     width: 16px;
     height: 16px;
+  }
+
+  .entry-linked-link {
+    padding: 4px 0;
+    font: inherit;
+    color: inherit;
+    text-decoration: underline;
+    text-decoration-thickness: 1.5px;
+    text-underline-offset: 3px;
+    cursor: pointer;
   }
 
   .entry-note {
