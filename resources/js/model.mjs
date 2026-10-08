@@ -5,7 +5,11 @@
 //   recipes: [{ id, title, ratingElika, ratingJanik, ingredients[], steps[], video, notes, source, createdAt, updatedAt }],
 //   plan: { 'YYYY-MM-DD': { slots: { breakfast: [entry], lunch: [], dinner: [], <extraId>: [] }, extras: [{ id, label }] } },
 // }
-// entry = { id, title, recipeId?, note?, who? }   who: 'E' (nur Elika) | 'J' (nur Janik)
+// entry = { id, title, recipeId?, note?, who?, leftover?, order? }
+//   who: 'E' (nur Elika) | 'J' (nur Janik)
+//   leftover: true = „Rest von gestern Abend" (zeigt live das Abendessen des Vortags)
+//   order: { rid, amount, instead } = stattdessen bestellt (Restaurant-ID, Betrag in €, ursprüngliches Gericht)
+// restaurants: [{ id, name }]
 // shopping: siehe shopping.mjs
 //
 // Ein Tag existiert im Plan nur, solange er etwas enthält; leere Tage werden entfernt.
@@ -27,7 +31,7 @@ export function uid(prefix = '') {
 }
 
 export function emptyState() {
-  return { version: 3, recipes: [], plan: {}, shopping: emptyShopping(), pantry: emptyPantry() };
+  return { version: 4, recipes: [], plan: {}, restaurants: [], shopping: emptyShopping(), pantry: emptyPantry() };
 }
 
 export function emptyDay() {
@@ -72,12 +76,33 @@ export function entriesOf(plan, iso, slot) {
 export const PEOPLE = { E: 'Elika', J: 'Janik' };
 const cleanWho = (w) => (w === 'E' || w === 'J' ? w : null);
 
-export function addEntry(plan, iso, slot, { title, recipeId = null, note = '', who = null }, index = null) {
+/** Bestellung säubern: Betrag in Euro (zwei Nachkommastellen) oder null. */
+export function cleanOrder(o) {
+  if (!o || typeof o !== 'object') return null;
+  const n = Number(String(o.amount ?? '').replace(',', '.'));
+  return {
+    rid: o.rid ? String(o.rid) : null,
+    amount: Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null,
+    instead: String(o.instead || '').trim(),
+  };
+}
+
+export const LEFTOVER_TITLE = 'Rest von gestern Abend';
+export const ORDER_TITLE = 'Bestellt';
+
+/** Bestellt? Neue Einträge tragen `order`, im Altbestand stand es als Freitext („Bestellen"). */
+export function isOrder(e) {
+  return !!e?.order || (!e?.recipeId && !e?.leftover && /\bbestell/i.test(String(e?.title || '')));
+}
+
+export function addEntry(plan, iso, slot, { title, recipeId = null, note = '', who = null, leftover = false, order = null }, index = null) {
   const day = ensureDay(plan, iso);
   const entry = { id: uid('e-'), title: String(title || '').trim() };
   if (recipeId) entry.recipeId = recipeId;
   if (note) entry.note = note;
   if (cleanWho(who)) entry.who = cleanWho(who);
+  if (leftover) entry.leftover = true;
+  if (order) entry.order = cleanOrder(order);
   const list = day.slots[slot] ||= [];
   if (index == null || index > list.length) list.push(entry);
   else list.splice(Math.max(0, index), 0, entry);
@@ -104,6 +129,14 @@ export function updateEntry(plan, iso, slot, id, patch) {
     const note = String(patch.note || '').trim();
     if (note) e.note = note;
     else delete e.note;
+  }
+  if ('leftover' in patch) {
+    if (patch.leftover) e.leftover = true;
+    else delete e.leftover;
+  }
+  if ('order' in patch) {
+    if (patch.order) e.order = cleanOrder(patch.order);
+    else delete e.order;
   }
   return e;
 }
@@ -231,7 +264,7 @@ export function historyTitles(plan, recipes = []) {
   for (const [iso, day] of Object.entries(plan)) {
     for (const list of Object.values(day.slots || {})) {
       for (const e of list) {
-        if (e.recipeId || !e.title) continue;
+        if (e.recipeId || !e.title || e.leftover || e.order) continue;
         const key = e.title.trim().toLowerCase();
         if (known.has(key)) continue;
         const cur = map.get(key) || { title: e.title.trim(), count: 0, last: iso };
@@ -287,12 +320,41 @@ export function sanitizeState(raw) {
           if (e.recipeId) out.recipeId = String(e.recipeId);
           if (e.note) out.note = String(e.note);
           if (cleanWho(e.who)) out.who = e.who;
+          if (e.leftover) out.leftover = true;
+          if (e.order) out.order = cleanOrder(e.order);
           return out;
         });
     }
     if (!isDayEmpty(d)) s.plan[iso] = d;
   }
+  const seen = new Set();
+  s.restaurants = (Array.isArray(raw.restaurants) ? raw.restaurants : [])
+    .filter((x) => x?.id && String(x.name || '').trim() && !seen.has(x.id) && seen.add(x.id))
+    .map((x) => ({ id: String(x.id), name: String(x.name).trim() }));
   s.shopping = sanitizeShopping(raw.shopping);
   s.pantry = sanitizePantry(raw.pantry);
   return s;
+}
+
+// ---------------------------------------------------------------- Restaurants
+
+export function addRestaurant(list, name) {
+  const clean = String(name || '').replace(/\s+/g, ' ').trim();
+  if (!clean) return null;
+  const same = list.find((r) => r.name.toLowerCase() === clean.toLowerCase());
+  if (same) return same;
+  const r = { id: uid('o-'), name: clean };
+  list.push(r);
+  return r;
+}
+
+/** Wie oft bei welchem Restaurant bestellt wurde (für die Sortierung der Auswahl). */
+export function restaurantUsage(plan) {
+  const out = {};
+  for (const day of Object.values(plan)) {
+    for (const list of Object.values(day.slots || {})) {
+      for (const e of list) if (e.order?.rid) out[e.order.rid] = (out[e.order.rid] || 0) + 1;
+    }
+  }
+  return out;
 }

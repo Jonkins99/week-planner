@@ -6,6 +6,8 @@ import {
   Undo2, CircleAlert, LoaderCircle, History, Link, GripVertical, Eye, EyeOff, Info,
   Apple, Milk, Snowflake, Wheat, Candy, SprayCan, Package, Mic, Minus, Store, StickyNote, Circle, ChevronDown, ShoppingBasket,
   ToyBrick, Lock, CloudUpload, FileArchive, Users, User, Share,
+  Menu, ChefHat, ChartColumn, Bike, Lightbulb, Recycle, Repeat, CalendarClock, PackagePlus, TrendingUp, TrendingDown,
+  Equal, Headphones, Play as PlayIcon, Pause, RotateCcw, RotateCw, Timer, Euro, Gift, FolderOpen, Library, Receipt, Image,
 } from 'lucide';
 
 const ICONS = {
@@ -20,6 +22,10 @@ const ICONS = {
   'dept-household': SprayCan, 'dept-other': Package, mic: Mic, minus: Minus, store: Store, note: StickyNote,
   circle: Circle, 'chevron-down': ChevronDown, basket: ShoppingBasket,
   brick: ToyBrick, lock: Lock, cloud: CloudUpload, zip: FileArchive, users: Users, user: User, 'share-file': Share,
+  menu: Menu, chef: ChefHat, stats: ChartColumn, order: Bike, idea: Lightbulb, leftover: Recycle, repeat: Repeat,
+  'available': CalendarClock, 'to-pantry': PackagePlus, 'trend-up': TrendingUp, 'trend-down': TrendingDown, equal: Equal,
+  headphones: Headphones, 'play-solid': PlayIcon, pause: Pause, 'rewind': RotateCcw, 'forward': RotateCw, timer: Timer,
+  euro: Euro, gift: Gift, folder: FolderOpen, library: Library, receipt: Receipt, image: Image, tools: Plus,
 };
 
 const attrs = (o) => Object.entries(o).map(([k, v]) => `${k}="${String(v).replace(/"/g, '&quot;')}"`).join(' ');

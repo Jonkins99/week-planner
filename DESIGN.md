@@ -58,3 +58,15 @@ View Transitions: Reiter rechts davon gleiten von rechts herein, links davon von
 - Mengen als Stepper: Minus · tippbares Zahlenfeld · Plus.
 - Personen-Kennzeichen: runde Plakette „E" in Tomate, „J" in Kobalt vor dem Gerichtnamen.
 - Zugangssperre: Kobaltfläche mit einem Teller in der Mitte (Logo, Passwortfeld), Schildlinie als doppelter Ring.
+
+## Statistik, Küche, Rückblick
+
+- Statistik als Vollbildseite mit Tellern je Kennzahl; Bestellquote groß in Tomate, Restaurants als Balken, Rezept/Freitext als geteilter Jade/Safran-Balken, Trends mit runden Pfeil-Plaketten (Jade hoch, Tomate runter).
+- Küche heute: ein großer Teller mit dem Abendessen in Schildschrift, Rezept per Kobalt-Knopf aufklappbar (Zutaten/Schritte ~1,22 rem), Auftau-Frage als gestrichelte Kobalt-Fläche.
+- Rückblick („Wrapped"): Vollbild-Folien in vollen Emaillefarben (Kobalt, Safran, Jade, Tomate, Nachtblau, Teller-Weiß), riesige schmale Versalien (Archivo 900, 62 % Breite), zwei Teller als Kreise im Hintergrund (drehender Rand, atmende Scheibe). Folienwechsel: Inhalte steigen gestaffelt mit leichter Unschärfe auf; Fortschrittsbalken oben, 9 s je Folie.
+
+## Werkzeuge
+
+- Jede Kachel hat ihre eigene Welt und eine leise Endlos-Animation (pausiert, wenn der Reiter nicht sichtbar ist; bei reduzierter Bewegung aus): Harry Potter (Weinrot/Gold, schwebende Kerzen, glimmender Blitz), Aquarium (Wasser, Fische, Blasen, Sand), To-do (Notizkarte, Haken zeichnen sich), Datei-Aussortierer (Pink, Kartenstapel wischt links/rechts), Kicktipp (Rasen, Ball, Spielstand), Pokémon Sleep (Nachthimmel, atmendes schlafendes Wesen, „z").
+- Noch nicht verfügbare Kacheln: Graustufen, 62 % Deckkraft, Plakette „Bald".
+- Harry-Potter-Player: eigene Welt (Große Halle bei Nacht): Mitternachtsgrund mit weinrotem Schein, schwebende Kerzen, Schrift Cinzel Decorative (Titel) und IM Fell English (Text), Gold `#f1d27a`/`#d4a73c`, Pergament `#efe2c4`. Bände als Wachssiegel I–VII, Fortschritt als Goldlinie mit Schnatz als Regler, Abspielknopf als Goldmünze.

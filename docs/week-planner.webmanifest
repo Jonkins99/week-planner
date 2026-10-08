@@ -57,6 +57,26 @@
           "sizes": "192x192"
         }
       ]
+    },
+    {
+      "name": "Heute in der Küche",
+      "url": "./?tab=plan&kitchen=1",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
     }
-  ]
+  ],
+  "share_target": {
+    "action": "./index.html",
+    "method": "GET",
+    "enctype": "application/x-www-form-urlencoded",
+    "params": {
+      "title": "share_title",
+      "text": "share_text",
+      "url": "share_url"
+    }
+  }
 }

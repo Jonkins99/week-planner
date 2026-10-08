@@ -4,8 +4,14 @@ import { iconSvg } from './icons.mjs';
 import {
   MEALS, PEOPLE, slotsOf, getDay, addEntry, updateEntry, removeEntry, moveEntry, duplicateEntry, findEntry,
   addExtraSlot, renameExtraSlot, removeExtraSlot, newRecipe, clampRating, averageRating, sortRecipes,
-  splitLines, usageOf, historyTitles, unlinkRecipe, sanitizeState,
+  splitLines, usageOf, historyTitles, unlinkRecipe, sanitizeState, LEFTOVER_TITLE, ORDER_TITLE, addRestaurant, restaurantUsage,
 } from './model.mjs';
+import { previousDinner, cookHistory, suggestDinners, rememberShown, ingredientName, pantryMatch, similarRecipes, daysBetween } from './suggest.mjs';
+import { periodOf, shiftPeriod, computeStats, compareStats, firstSeen, fmtEuro, fmtPct, fmtDiff } from './stats.mjs';
+import { NUTRI_SYSTEM, NUTRI_SCHEMA, nutriModels, periodDishes, nutriSignature, nutriPrompt, readNutrition, acceptNutrition } from './nutrition-ai.mjs';
+import { renderWrappedImage } from './wrapped-image.mjs';
+import { BOOKS, SKIPS, SLEEP_OPTIONS, MARK_AFTER_MS, eveningKey, markDue, advance, seekAcross, scrubFactor, fmtClock } from './hp.mjs';
+import { loadLibrary, saveHandles, copyFiles, removeBook, trackFile, canPickHandles } from './hp-store.mjs';
 import { isoDate, mondayOf, addDays, weekDays, isoWeek, rangeLabel, yearOfWeek, WEEKDAYS, WEEKDAYS_SHORT, dayMonth, weekdayIndex } from './dates.mjs';
 import { search, normalize } from './search.mjs';
 import { weekText } from './whatsapp.mjs';
@@ -16,11 +22,11 @@ import { createDrag } from './drag.mjs';
 import { isUnlocked, checkPassword, rememberUnlock } from './auth.mjs';
 import { buildBackupZip, readBackupFile, backupName } from './backup.mjs';
 import { uploadToDrive } from './drive.mjs';
-import { PLACES, MAINS, placeOf, isBrick, addPantryItem, pantryTree } from './pantry.mjs';
+import { PLACES, MAINS, placeOf, isBrick, addPantryItem, pantryTree, belowMin, placeForProduct } from './pantry.mjs';
 import { BRICK_SYSTEM, brickSchema, brickPrompt, readBrickMeals, brickModels } from './pantry-ai.mjs';
 import {
   DEPTS, allStores, storeById, storeByName, addStore, removeStore, addItem, setDept, groupItems,
-  withDeptHeads, suggestProducts, keyOf,
+  withDeptHeads, suggestProducts, keyOf, recurringOf, setRecurring, applyRecurring, nextWeekday,
 } from './shopping.mjs';
 import {
   CLASSIFY_SYSTEM, CLASSIFY_SCHEMA, classifyPrompt, readClassification, voiceSystem, voiceSchema, readVoice, shopModels,
@@ -32,6 +38,7 @@ const TABS = [
   { key: 'shop', label: 'Einkauf', icon: 'shop' },
   { key: 'recipes', label: 'Rezepte', icon: 'recipes' },
   { key: 'pantry', label: 'Vorrat', icon: 'pantry' },
+  { key: 'tools', label: 'Werkzeuge', icon: 'tools' },
 ];
 
 const EXTRA_PRESETS = ['Snack', 'Kaffee & Kuchen', 'Vorbereitung', 'Spätmahlzeit', 'Gäste'];
@@ -81,16 +88,35 @@ function blobToBase64(blob) {
 
 const DRIVE_KEY = 'wp-drive-v1';
 
-const TAB_ORDER = ['plan', 'shop', 'recipes', 'pantry'];
+const TAB_ORDER = ['plan', 'shop', 'recipes', 'pantry', 'tools'];
+const BACKUP_KEY = 'wp-backup-last-v1';
+const SUGGEST_KEY = 'wp-suggest-v1';
+const NUTRI_KEY = 'wp-nutrition-v1';
+const WRAP_KEY = 'wp-wrapped-v1';
+const HP_KEY = 'wp-hp-v1';
+const WEEK_MS = 7 * 86400000;
+
+// Recipe-Lookup: die Map wird nur neu gebaut, wenn sich die Liste selbst ändert
+// (Titeländerungen kommen über die reaktiven Rezept-Objekte trotzdem an).
+const recipeIndex = new WeakMap();
+
+// Der Hörbuch-Player lebt außerhalb von Alpine: DOM-Objekte gehören nicht in den
+// reaktiven Zustand, und das Abspielen soll unabhängig von jeder Ansicht weiterlaufen.
+let hpAudio = null;
+let hpUrl = '';
 
 // Ansichtswechsel mit View Transition API; ohne Unterstützung einfach direkt.
 function viewTransition(update, dir = 'none') {
   const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   if (!document.startViewTransition || reduce) { update(); return; }
   document.documentElement.dataset.vt = dir;
+  // Nicht auf Alpine.nextTick warten: Alpine hält nextTick-Rückrufe bis zum nächsten
+  // Animationsframe zurück, sobald irgendwo ein x-transition läuft — und während der
+  // View Transition gibt es keine Frames. Ergebnis war ein 4-Sekunden-Hänger. Alpines
+  // DOM-Aktualisierung läuft als Microtask, ein Makrotask danach reicht.
   const t = document.startViewTransition(() => {
     update();
-    return new Promise((resolve) => Alpine.nextTick(resolve));
+    return new Promise((resolve) => setTimeout(resolve, 0));
   });
   // Folgt direkt ein zweiter Wechsel, wird der erste übersprungen: das ist kein Fehler.
   t.ready.catch(() => {});
@@ -106,7 +132,8 @@ Alpine.directive('longpress', (el, { expression }, { evaluateLater, cleanup }) =
   const clear = () => { clearTimeout(timer); timer = null; };
   const down = (e) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
-    if (e.target.closest('[data-no-longpress]')) return;
+    const stop = e.target.closest('[data-no-longpress], [x-longpress]');
+    if (stop && stop !== el) return;
     fired = false;
     start = { x: e.clientX, y: e.clientY };
     clear();
@@ -220,6 +247,27 @@ Alpine.data('app', () => ({
   storeForm: null,
   shopFocus: false,
   rec: { state: 'idle', seconds: 0, text: '' },
+  availBox: null,
+  recurringBox: false,
+
+  // Wochenplan-Erweiterungen
+  order: null,
+  suggestBox: null,
+  ingredientsBox: null,
+  kitchenOpen: {},
+  statsView: { kind: 'month', anchor: isoDate() },
+  nutri: {},
+  wrapped: null,
+  backupAuto: false,
+
+  // Werkzeuge: Harry-Potter-Hörbücher
+  BOOKS,
+  SKIPS,
+  SLEEP_OPTIONS,
+  hp: {
+    lib: {}, loaded: false, pos: { book: 1, track: 0, time: 0 }, playing: false, current: 0, duration: 0,
+    sleep: 0, sleepUntil: 0, sleepLeft: 0, scrub: null, notice: '', error: '', copying: null, canHandles: false,
+  },
 
   async init() {
     this.locked = !isUnlocked();
@@ -231,6 +279,8 @@ Alpine.data('app', () => ({
     if (TABS.some((t) => t.key === ask)) this.tab = ask;
     this.settings.keys = normalizeKeys(readJson(GEMINI_KEY, {})?.keys || []);
     this.backup.clientId = readJson(DRIVE_KEY, {})?.clientId || '';
+    this.backupAuto = !!readJson(DRIVE_KEY, {})?.auto;
+    this.nutri = readJson(NUTRI_KEY, {}) || {};
 
     history.replaceState({ wp: 0 }, '');
     window.addEventListener('popstate', (e) => {
@@ -243,8 +293,8 @@ Alpine.data('app', () => ({
       if (this.layers.length > depth) this.dropLayers(this.layers.length - depth);
     });
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') this.today = isoDate();
-      else { this.persistUi(); flushData(this.db); }
+      if (document.visibilityState === 'visible') { this.today = isoDate(); this.runRecurring(); }
+      else { this.persistUi(); flushData(this.db); this.hpSave(); }
     });
     window.addEventListener('pagehide', () => { this.persistUi(); flushData(this.db); });
 
@@ -257,6 +307,21 @@ Alpine.data('app', () => ({
     for (const key of ['tab', 'monday', 'recipeQuery', 'recipeSort', 'detailId', 'shopStore', 'pantryPlace']) this.$watch(key, () => this.persistUi());
     this.$watch('shopCollapsed', () => this.persistUi());
     this.classifyMissing();
+    this.runRecurring();
+    this.hpInit();
+    this.armAutoBackup();
+    if (!this.locked) this.afterUnlock();
+  },
+
+  // Alles, was erst nach der Freischaltung sichtbar werden darf.
+  afterUnlock() {
+    if (this.handleShareTarget()) return;
+    if (new URLSearchParams(location.search).get('kitchen')) {
+      history.replaceState({ wp: 0 }, '', location.pathname);
+      this.openKitchen();
+      return;
+    }
+    setTimeout(() => this.checkWrapped(), 700);
   },
 
   // ------------------------------------------------------------ Zustand je Reiter
@@ -360,6 +425,14 @@ Alpine.data('app', () => ({
       if (name === 'store') this.storeForm = null;
       if (name === 'pantry-item') this.pantryEdit = null;
       if (name === 'bricks') this.bricks = null;
+      if (name === 'order') this.order = null;
+      if (name === 'suggest') this.suggestBox = null;
+      if (name === 'ingredients') this.ingredientsBox = null;
+      if (name === 'avail') this.availBox = null;
+      if (name === 'recurring') this.recurringBox = false;
+      if (name === 'kitchen') this.releaseWakeLock();
+      if (name === 'wrapped') this.wrappedClosed();
+      if (name === 'hp') this.hp.scrub = null;
     }
   },
 
@@ -379,12 +452,20 @@ Alpine.data('app', () => ({
     this.db.plan = s.plan;
     this.db.shopping = s.shopping;
     this.db.pantry = s.pantry;
+    this.db.restaurants = s.restaurants;
     this.commit();
   },
 
   get recipesById() {
+    const list = this.db?.recipes;
+    if (!list) return {};
+    const n = list.length;
+    const raw = Alpine.raw(list);
+    const hit = recipeIndex.get(raw);
+    if (hit && hit.n === n) return hit.map;
     const map = {};
-    for (const r of this.db?.recipes || []) map[r.id] = r;
+    for (const r of list) map[r.id] = r;
+    recipeIndex.set(raw, { n, map });
     return map;
   },
 
@@ -574,6 +655,7 @@ Alpine.data('app', () => ({
     const recipe = e.recipeId ? this.recipesById[e.recipeId] : null;
     const items = [
       { label: 'Bearbeiten', icon: 'pencil', action: () => this.openEntry(iso, slot, e) },
+      ...(slot === 'dinner' && iso <= this.today && !e.order ? [{ label: 'Stattdessen bestellt', icon: 'order', action: () => this.openOrder(iso, slot, e) }] : []),
       { label: 'Duplizieren', icon: 'copy', action: () => this.openPicker('duplicate', { iso, slot, id: e.id, title: this.titleOf(e) }) },
       { label: 'Verschieben', icon: 'calendar-plus', action: () => this.openPicker('move', { iso, slot, id: e.id, title: this.titleOf(e) }) },
     ];
@@ -582,6 +664,7 @@ Alpine.data('app', () => ({
     }
     if (e.who) items.push({ label: 'Für beide', icon: 'users', action: () => this.setWho(iso, slot, e.id, null) });
     if (recipe) items.push({ label: 'Rezept öffnen', icon: 'recipe', action: () => this.showRecipe(recipe.id) });
+    if (recipe?.ingredients.length) items.push({ label: 'Zutaten einkaufen', icon: 'shop', action: () => this.openIngredients(recipe.id) });
     const link = e.note && findVideoUrl(e.note) || (e.note && /https?:\/\//.test(e.note) ? e.note.match(/https?:\/\/\S+/)[0] : '');
     if (!recipe && link) items.push({ label: 'Link öffnen', icon: 'external', action: () => window.open(link, '_blank', 'noopener') });
     items.push({ label: 'Entfernen', icon: 'trash', danger: true, action: () => this.deleteEntry(iso, slot, e.id) });
@@ -613,7 +696,7 @@ Alpine.data('app', () => ({
   deleteEntry(iso, slot, id) {
     const e = findEntry(this.db.plan, iso, slot, id);
     if (!e) return;
-    this.withUndo(`„${this.titleOf(e)}" entfernt`, () => removeEntry(this.db.plan, iso, slot, id));
+    this.withUndo(`„${this.dishTitle(e, iso)}" entfernt`, () => removeEntry(this.db.plan, iso, slot, id));
   },
 
   clearDay(iso) {
@@ -621,7 +704,7 @@ Alpine.data('app', () => ({
   },
 
   async exportWeek() {
-    const text = weekText(this.db.plan, this.monday, (e) => this.titleOf(e));
+    const text = weekText(this.db.plan, this.monday, (e, iso) => this.exportTitle(e, iso));
     if (!text) { this.notify('In dieser Woche ist noch nichts geplant.'); return; }
     try {
       await copyText(text);
@@ -655,6 +738,7 @@ Alpine.data('app', () => ({
   // ------------------------------------------------------------ Eintragen
 
   openEntry(iso, slot, e = null) {
+    if (e?.order) { this.openOrder(iso, slot, e); return; }
     this.entry = {
       iso, slot, id: e?.id || null,
       title: e ? this.titleOf(e) : '',
@@ -663,6 +747,7 @@ Alpine.data('app', () => ({
       noteOpen: !!e?.note,
       asRecipe: false,
       focus: false,
+      leftover: !!e?.leftover,
     };
     this.entryActive = -1;
     this.openLayer('entry');
@@ -759,8 +844,9 @@ Alpine.data('app', () => ({
       recipeId = r.id;
     }
     const note = f.note.trim();
-    if (f.id) updateEntry(this.db.plan, f.iso, f.slot, f.id, { title, recipeId, note });
-    else addEntry(this.db.plan, f.iso, f.slot, { title, recipeId, note });
+    const leftover = f.leftover && title === LEFTOVER_TITLE;
+    if (f.id) updateEntry(this.db.plan, f.iso, f.slot, f.id, { title, recipeId, note, leftover });
+    else addEntry(this.db.plan, f.iso, f.slot, { title, recipeId, note, leftover });
     this.commit();
     this.closeLayer('entry');
     if (f.asRecipe && !f.recipeId) this.notify(`„${title}" auch als Rezept gespeichert`, { tone: 'ok' });
@@ -911,19 +997,19 @@ Alpine.data('app', () => ({
     this.openDetail(id);
   },
 
+  // Das Detail gleitet per x-transition herein (reine CSS-Transformation). Eine View
+  // Transition müsste vorher die ganze Seite abfotografieren — auf dem Handy spürbar langsam.
   openDetail(id) {
     this.checked = {};
-    if (this.detailId && this.isOpen('detail')) { this.detailId = id; return; }
-    viewTransition(() => { this.detailId = id; }, 'forward');
+    if (this.detailId && this.isOpen('detail')) { this.detailId = id; this.$nextTick(() => this.$refs.detailScroller?.scrollTo({ top: 0 })); return; }
+    this.detailId = id;
     this.openLayer('detail');
     this.$nextTick(() => this.$refs.detailScroller?.scrollTo({ top: 0 }));
   },
 
   closeDetail() {
-    viewTransition(() => {
-      if (this.isOpen('detail')) this.closeLayer('detail');
-      else this.detailId = null;
-    }, 'back');
+    if (this.isOpen('detail')) this.closeLayer('detail');
+    else this.detailId = null;
   },
 
   rateDetail(who, value) {
@@ -1043,10 +1129,16 @@ Alpine.data('app', () => ({
     }
   },
 
-  saveEditor() {
+  async saveEditor() {
     const ed = this.editor;
     const title = ed.title.trim();
     if (!title) { ed.error = 'Der Titel fehlt.'; this.$refs.editorTitle?.focus(); return; }
+    const twin = ed.isNew ? similarRecipes(this.db.recipes, title, ed.id).find((d) => d.score >= 0.9) : null;
+    if (twin) {
+      const ok = await this.confirm('Gibt es schon?', `„${twin.recipe.title}" ist sehr ähnlich. Trotzdem als neues Rezept speichern?`, 'Speichern');
+      if (!ok || this.editor !== ed) return;
+      await this.afterPop();
+    }
     this._importAbort?.abort();
     let r = this.recipesById[ed.id];
     const patch = {
@@ -1162,6 +1254,7 @@ Alpine.data('app', () => ({
   },
 
   downloadBackup() {
+    this.noteBackup();
     const blob = this.backupBlob();
     const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: backupName() });
     document.body.appendChild(a);
@@ -1180,6 +1273,7 @@ Alpine.data('app', () => ({
     const file = new File([this.backupBlob()], backupName(), { type: 'application/zip' });
     try {
       await navigator.share({ files: [file], title: 'Week Planner Sicherung' });
+      this.noteBackup();
     } catch (e) {
       if (e?.name !== 'AbortError') this.notify('Teilen nicht möglich – bitte herunterladen.', { tone: 'error' });
     }
@@ -1190,30 +1284,71 @@ Alpine.data('app', () => ({
     writeJson(DRIVE_KEY, { ...cur, clientId: this.backup.clientId.trim() });
   },
 
-  async driveBackup() {
+  async driveBackup({ silent = false } = {}) {
     const b = this.backup;
-    if (b.busy) return;
-    if (!b.clientId.trim()) { this.notify('Zuerst die Google-Client-ID eintragen.', { tone: 'error' }); return; }
+    if (b.busy) return false;
+    if (!b.clientId.trim()) { if (!silent) this.notify('Zuerst die Google-Client-ID eintragen.', { tone: 'error' }); return false; }
     this.saveDriveClient();
     b.busy = true;
-    b.status = 'Verbinde mit Google Drive …';
+    b.status = silent ? 'Wöchentliche Sicherung läuft …' : 'Verbinde mit Google Drive …';
     try {
       const cur = readJson(DRIVE_KEY, {}) || {};
       const name = backupName();
-      const res = await uploadToDrive({ clientId: b.clientId.trim(), blob: this.backupBlob(), name, folder: cur.folderId || null });
-      writeJson(DRIVE_KEY, { ...cur, clientId: b.clientId.trim(), folderId: res.folderId, last: Date.now() });
-      b.status = `Gespeichert in „Week Planner Sicherungen": ${name}`;
-      this.notify('Sicherung in Google Drive gespeichert', { tone: 'ok' });
+      const res = await uploadToDrive({ clientId: b.clientId.trim(), blob: this.backupBlob(), name, folder: cur.folderId || null, keep: 3, silent });
+      writeJson(DRIVE_KEY, { ...(readJson(DRIVE_KEY, {}) || {}), clientId: b.clientId.trim(), folderId: res.folderId, last: Date.now() });
+      this.noteBackup();
+      b.status = `Gespeichert in „Week Planner Sicherungen": ${name}${res.removed ? ` · ${res.removed} ältere entfernt` : ''}`;
+      this.notify(silent ? 'Wöchentliche Sicherung in Google Drive gespeichert' : 'Sicherung in Google Drive gespeichert', { tone: 'ok' });
+      return true;
     } catch (e) {
       b.status = e?.message || 'Hochladen fehlgeschlagen.';
+      if (silent) this.notify('Die wöchentliche Sicherung braucht eine Anmeldung: Einstellungen → „In Drive sichern".', { tone: 'error', ms: 6000 });
+      return false;
     } finally {
       b.busy = false;
     }
   },
 
+  noteBackup() {
+    writeJson(BACKUP_KEY, Date.now());
+    this._backupTick = Date.now();
+  },
+
   get lastDrive() {
     const t = readJson(DRIVE_KEY, {})?.last;
     return t ? new Date(t).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+  },
+
+  /** „Letzte Sicherung vor 3 Tagen" — über alle Wege (ZIP, Teilen, Drive). */
+  get lastBackupText() {
+    void this._backupTick;
+    const t = Math.max(Number(readJson(BACKUP_KEY, 0)) || 0, Number(readJson(DRIVE_KEY, {})?.last) || 0);
+    if (!t) return 'Noch keine Sicherung erstellt';
+    const days = daysBetween(isoDate(new Date(t)), this.today);
+    return `Letzte Sicherung ${days <= 0 ? 'heute' : days === 1 ? 'gestern' : `vor ${days} Tagen`}`;
+  },
+
+  setBackupAuto(on) {
+    this.backupAuto = on;
+    writeJson(DRIVE_KEY, { ...(readJson(DRIVE_KEY, {}) || {}), auto: on });
+    if (on) this.armAutoBackup();
+  },
+
+  // Wöchentlich automatisch: Google verlangt für die Anmeldung eine Nutzergeste, darum
+  // läuft die fällige Sicherung beim ersten Antippen nach dem Öffnen der App (still,
+  // mit der einmal erteilten Freigabe).
+  armAutoBackup() {
+    const d = readJson(DRIVE_KEY, {}) || {};
+    if (!d.auto || !d.clientId || this._autoArmed) return;
+    if (Date.now() - (Number(d.last) || 0) < WEEK_MS) return;
+    this._autoArmed = true;
+    const run = () => {
+      document.removeEventListener('click', run, true);
+      this._autoArmed = false;
+      if (this.locked) { this.armAutoBackup(); return; }
+      this.driveBackup({ silent: true });
+    };
+    document.addEventListener('click', run, true);
   },
 
   async uploadBackup(ev) {
@@ -1226,7 +1361,7 @@ Alpine.data('app', () => ({
       const ok = await this.confirm('Sicherung einspielen?', `${s.recipes.length} Rezepte, ${Object.keys(s.plan).length} geplante Tage, ${s.shopping.items.length} Einkaufsposten und ${s.pantry.items.length} Vorräte ersetzen den aktuellen Stand.`, 'Einspielen');
       if (!ok) return;
       this.withUndo('Sicherung eingespielt', () => {
-        this.db.recipes = s.recipes; this.db.plan = s.plan; this.db.shopping = s.shopping; this.db.pantry = s.pantry;
+        this.db.recipes = s.recipes; this.db.plan = s.plan; this.db.shopping = s.shopping; this.db.pantry = s.pantry; this.db.restaurants = s.restaurants;
       });
     } catch {
       this.notify('Die Datei ist keine gültige Sicherung.', { tone: 'error' });
@@ -1245,7 +1380,7 @@ Alpine.data('app', () => ({
         rememberUnlock();
         viewTransition(() => { this.locked = false; });
         a.pw = '';
-        this.$nextTick(() => { this.setupDrag(); this.scrollToToday(false); });
+        this.$nextTick(() => { this.setupDrag(); this.scrollToToday(false); this.afterUnlock(); });
       } else {
         a.error = 'Das Passwort stimmt nicht.';
       }
@@ -1296,7 +1431,16 @@ Alpine.data('app', () => ({
     item.qty = n;
     item.updatedAt = Date.now();
     this.commit();
+    if (n >= before) return;
+    if (belowMin(item)) { this.restockBelowMin(item); return; }
     if (before > 0 && n === 0) this.askRestock(item);
+  },
+
+  // Mindestbestand unterschritten: ohne Rückfrage auf die Einkaufsliste (ohne Laden).
+  restockBelowMin(item) {
+    if (this.db.shopping.items.some((it) => keyOf(it.name) === keyOf(item.name))) return;
+    this.addShopItem(item.name, { store: null, silent: true });
+    this.notify(`„${item.name}" unter Mindestbestand (${item.min}) – steht jetzt auf der Einkaufsliste`, { tone: 'ok' });
   },
 
   pantryStep(item, d) {
@@ -1313,7 +1457,7 @@ Alpine.data('app', () => ({
   },
 
   openPantryEdit(item) {
-    this.pantryEdit = { id: item.id, name: item.name, place: item.place, qty: item.qty };
+    this.pantryEdit = { id: item.id, name: item.name, place: item.place, qty: item.qty, min: item.min || 0 };
     this.openLayer('pantry-item');
   },
 
@@ -1324,8 +1468,12 @@ Alpine.data('app', () => ({
     if (!item || !name) { this.closeLayer('pantry-item'); return; }
     item.name = name;
     item.place = f.place;
+    const min = Math.max(0, Math.min(999, Math.round(Number(f.min) || 0)));
+    if (min) item.min = min;
+    else delete item.min;
     this.closeLayer('pantry-item');
     this.setPantryQty(item, f.qty);
+    if (belowMin(item)) this.restockBelowMin(item);
   },
 
   deletePantryItem() {
@@ -1372,11 +1520,14 @@ Alpine.data('app', () => ({
         if (!it) continue;
         it.qty = Math.max(0, it.qty - b.count);
         it.updatedAt = Date.now();
-        if (it.qty === 0) names.push(it);
+        if (it.qty === 0 || belowMin(it)) names.push(it);
       }
     });
     this.closeLayer('bricks');
-    for (const it of names) await this.askRestock(it);
+    for (const it of names) {
+      if (belowMin(it)) this.restockBelowMin(it);
+      else await this.askRestock(it);
+    }
   },
 
   // ------------------------------------------------------------ Einkauf
@@ -1511,12 +1662,13 @@ Alpine.data('app', () => ({
   shopMenu(ev) {
     this.openMenu(ev, [
       { label: 'Laden hinzufügen', icon: 'store', action: () => this.openStoreForm() },
+      { label: 'Wiederkehrende Einkäufe', icon: 'repeat', action: () => { this.recurringBox = true; this.openLayer('recurring'); } },
       { label: 'Ganze Liste leeren', icon: 'trash', danger: true, action: () => this.clearShopping() },
     ]);
   },
 
   openItemEdit(item) {
-    this.shopEdit = { id: item.id, name: item.name, store: item.store, dept: item.dept || 'other' };
+    this.shopEdit = { id: item.id, name: item.name, store: item.store, dept: item.dept || 'other', weeks: recurringOf(this.db.shopping, item.name)?.weeks || 0 };
     this.openLayer('item');
   },
 
@@ -1531,6 +1683,8 @@ Alpine.data('app', () => ({
     if (renamed) this.db.shopping.catalog[keyOf(name)] ||= { name, dept: f.dept, count: 1, last: Date.now() };
     setDept(this.db.shopping, name, f.dept);
     item.dept = f.dept;
+    const was = recurringOf(this.db.shopping, name);
+    if ((was?.weeks || 0) !== f.weeks || (was && was.store !== item.store)) setRecurring(this.db.shopping, item, f.weeks, this.today);
     this.commit();
     this.closeLayer('item');
   },
@@ -1678,6 +1832,870 @@ Alpine.data('app', () => ({
     } finally {
       this.rec = { state: 'idle', seconds: 0, text: '' };
     }
+  },
+
+  // ------------------------------------------------------------ Hilfen für Ebenen
+
+  /** Wartet, bis ein laufender Rücksprung (history.go) angekommen ist. */
+  afterPop() {
+    return new Promise((resolve) => {
+      const start = Date.now();
+      const tick = () => (this._popping > 0 && Date.now() - start < 900 ? setTimeout(tick, 30) : resolve());
+      tick();
+    });
+  },
+
+  // ------------------------------------------------------------ Anzeige von Einträgen
+
+  restaurantName(id) {
+    return id ? this.db.restaurants.find((r) => r.id === id)?.name || '' : '';
+  },
+
+  /** Angezeigter Titel: Rest zeigt das Abendessen des Vortags, Bestellung das Restaurant. */
+  dishTitle(e, iso) {
+    if (e.leftover) {
+      const prev = previousDinner(this.db.plan, iso);
+      return prev.length ? prev.map((x) => this.dishTitle(x, addDays(iso, -1))).join(' + ') : LEFTOVER_TITLE;
+    }
+    if (e.order) return this.restaurantName(e.order.rid) || ORDER_TITLE;
+    return this.titleOf(e);
+  },
+
+  dishNote(e) {
+    if (e.leftover) return 'Rest von gestern Abend';
+    if (e.order) return ['Bestellt', e.order.amount ? fmtEuro(e.order.amount) : '', e.order.instead ? `statt ${e.order.instead}` : ''].filter(Boolean).join(' · ');
+    return this.noteLabel(e);
+  },
+
+  dishIcon(e) {
+    if (e.leftover) return 'leftover';
+    if (e.order) return 'order';
+    return e.recipeId ? 'recipe' : '';
+  },
+
+  exportTitle(e, iso) {
+    if (e.leftover) {
+      const prev = previousDinner(this.db.plan, iso);
+      return prev.length ? `Rest von gestern (${prev.map((x) => this.dishTitle(x, addDays(iso, -1))).join(' + ')})` : LEFTOVER_TITLE;
+    }
+    if (e.order) {
+      const name = this.restaurantName(e.order.rid);
+      return name ? `Bestellt bei ${name}` : ORDER_TITLE;
+    }
+    return this.titleOf(e);
+  },
+
+  // ------------------------------------------------------------ Kopfleiste Wochenplan
+
+  planMenu(ev) {
+    this.openMenu(ev, [
+      { label: 'Kopieren', icon: 'copy', action: () => this.exportWeek() },
+      { label: 'Statistiken', icon: 'stats', action: () => this.openStats() },
+      { label: 'Einstellungen', icon: 'settings', action: () => this.openSettings() },
+    ]);
+  },
+
+  // ------------------------------------------------------------ Rest von gestern
+
+  hasPrevDinner(iso) {
+    return previousDinner(this.db.plan, iso).length > 0;
+  },
+
+  markLeftover(iso) {
+    const prev = previousDinner(this.db.plan, iso);
+    this.withUndo(prev.length ? `Mittag: Rest von „${this.dishTitle(prev[0], addDays(iso, -1))}"` : 'Mittag: Rest von gestern', () => {
+      addEntry(this.db.plan, iso, 'lunch', { title: LEFTOVER_TITLE, leftover: true });
+    });
+  },
+
+  // ------------------------------------------------------------ Stattdessen bestellt
+
+  openOrder(iso, slot, e = null, { title = '' } = {}) {
+    const fromEntry = this.isOpen('entry');
+    const o = e?.order || null;
+    const usage = restaurantUsage(this.db.plan);
+    const first = [...this.db.restaurants].sort((a, b) => (usage[b.id] || 0) - (usage[a.id] || 0))[0];
+    this.order = {
+      iso, slot, id: e?.id || null, editing: !!o,
+      instead: o ? o.instead : (e ? this.titleOf(e) : title).trim(),
+      amount: o?.amount ? String(o.amount).replace('.', ',') : '',
+      rid: o ? o.rid : first?.id || null,
+      adding: !this.db.restaurants.length, newName: '', fromEntry,
+    };
+    this.openLayer('order');
+    setTimeout(() => (this.order?.adding ? this.$refs.orderNew : this.$refs.orderAmount)?.focus(), 80);
+  },
+
+  orderFromEntry() {
+    const f = this.entry;
+    if (!f) return;
+    const e = f.id ? findEntry(this.db.plan, f.iso, f.slot, f.id) : null;
+    this.openOrder(f.iso, f.slot, e, { title: e ? '' : f.title });
+  },
+
+  get restaurantChoices() {
+    const usage = restaurantUsage(this.db?.plan || {});
+    return [...(this.db?.restaurants || [])].sort((a, b) => (usage[b.id] || 0) - (usage[a.id] || 0) || a.name.localeCompare(b.name, 'de'));
+  },
+
+  get orderValid() {
+    const o = this.order;
+    if (!o) return false;
+    return o.adding ? !!o.newName.trim() || !!o.rid : true;
+  },
+
+  saveOrder() {
+    const o = this.order;
+    if (!o) return;
+    let rid = o.rid;
+    if (o.adding && o.newName.trim()) rid = addRestaurant(this.db.restaurants, o.newName).id;
+    const order = { rid, amount: o.amount, instead: o.instead };
+    const name = this.restaurantName(rid);
+    this.withUndo(name ? `Bestellt bei ${name}` : 'Als bestellt eingetragen', () => {
+      if (o.id) updateEntry(this.db.plan, o.iso, o.slot, o.id, { order, recipeId: null, leftover: false, title: ORDER_TITLE, note: '' });
+      else addEntry(this.db.plan, o.iso, o.slot, { title: ORDER_TITLE, order });
+    });
+    this.closeLayer(o.fromEntry ? 'entry' : 'order');
+  },
+
+  /** Bestellung zurücknehmen: das ursprüngliche Gericht kommt wieder, sonst fällt der Eintrag weg. */
+  undoOrder() {
+    const o = this.order;
+    if (!o?.id) return;
+    this.closeLayer('order');
+    this.withUndo('Bestellung entfernt', () => {
+      if (o.instead) updateEntry(this.db.plan, o.iso, o.slot, o.id, { order: null, title: o.instead });
+      else removeEntry(this.db.plan, o.iso, o.slot, o.id);
+    });
+  },
+
+  async deleteRestaurant(r) {
+    const ok = await this.confirm(`„${r.name}" entfernen?`, 'Bisherige Bestellungen bleiben erhalten, nur ohne Restaurantnamen.');
+    if (!ok) return;
+    this.db.restaurants = this.db.restaurants.filter((x) => x.id !== r.id);
+    if (this.order?.rid === r.id) this.order.rid = null;
+    this.commit();
+  },
+
+  // ------------------------------------------------------------ Abendessen-Vorschläge
+
+  openSuggest(iso) {
+    this.suggestBox = { iso, items: this.drawSuggestions(iso) };
+    this.openLayer('suggest');
+  },
+
+  drawSuggestions(iso) {
+    const store = readJson(SUGGEST_KEY, {}) || {};
+    const items = suggestDinners({ recipes: this.db.recipes, plan: this.db.plan, iso, today: this.today, shown: store.shown || {} });
+    writeJson(SUGGEST_KEY, { shown: rememberShown(store.shown, items.map((i) => i.key)) });
+    return items;
+  },
+
+  reshuffleSuggest() {
+    if (this.suggestBox) this.suggestBox.items = this.drawSuggestions(this.suggestBox.iso);
+  },
+
+  sinceLabel(days) {
+    if (days == null) return 'noch nie gekocht';
+    if (days <= 0) return 'heute';
+    if (days < 14) return `vor ${days} Tagen`;
+    if (days < 70) return `vor ${Math.round(days / 7)} Wochen`;
+    return `vor ${Math.round(days / 30)} Monaten`;
+  },
+
+  pickSuggestDinner(item) {
+    const iso = this.suggestBox?.iso;
+    if (!iso) return;
+    this.closeLayer('suggest');
+    this.withUndo(`Abendessen: ${item.title}`, () => addEntry(this.db.plan, iso, 'dinner', { title: item.title, recipeId: item.recipeId }));
+  },
+
+  // ------------------------------------------------------------ Zutaten auf die Einkaufsliste
+
+  openIngredients(recipeId) {
+    const r = this.recipesById[recipeId];
+    if (!r?.ingredients.length) { this.notify('Dieses Rezept hat keine Zutaten.'); return; }
+    const onList = new Set(this.db.shopping.items.map((it) => keyOf(it.name)));
+    const rows = r.ingredients.map((line, i) => {
+      const name = ingredientName(line);
+      const p = pantryMatch(line, this.db.pantry.items);
+      const listed = onList.has(keyOf(name));
+      return {
+        i, line, name,
+        hint: p ? `Im Vorrat: ${p.name} (${p.qty}, ${placeOf(p.place).short})` : listed ? 'Steht schon auf der Einkaufsliste' : '',
+        checked: !p && !listed,
+      };
+    });
+    this.ingredientsBox = { recipeId, title: r.title, rows };
+    this.openLayer('ingredients');
+  },
+
+  get ingredientsCount() {
+    return this.ingredientsBox?.rows.filter((r) => r.checked).length || 0;
+  },
+
+  addIngredients() {
+    const box = this.ingredientsBox;
+    if (!box) return;
+    const rows = box.rows.filter((r) => r.checked && r.name);
+    this.closeLayer('ingredients');
+    if (!rows.length) return;
+    const snap = this.snapshot();
+    for (const r of rows) this.addShopItem(r.name, { store: null, silent: true });
+    this.notify(rows.length === 1 ? `„${rows[0].name}" steht auf der Einkaufsliste` : `${rows.length} Zutaten auf der Einkaufsliste`, { undo: snap });
+  },
+
+  // ------------------------------------------------------------ Kochhistorie
+
+  get detailHistory() {
+    return this.detail ? cookHistory(this.db.plan, this.detail.id, this.today) : { cooked: [], planned: [], count: 0, last: null, daysSince: null, next: null };
+  },
+
+  get editorDupes() {
+    const ed = this.editor;
+    if (!ed || ed.title.trim().length < 3) return [];
+    return similarRecipes(this.db.recipes, ed.title, ed.id);
+  },
+
+  shortDate(iso) {
+    return `${WEEKDAYS_SHORT[weekdayIndex(iso)]} ${dayMonth(iso)}`;
+  },
+
+  // ------------------------------------------------------------ Küche: Heute
+
+  openKitchen() {
+    this.kitchenOpen = {};
+    const first = this.kitchenDinner[0];
+    if (first?.recipe) this.kitchenOpen[first.e.id] = true;
+    this.openLayer('kitchen');
+    this.requestWakeLock();
+  },
+
+  async requestWakeLock() {
+    try { this._wake = await navigator.wakeLock?.request('screen'); } catch { this._wake = null; }
+  },
+
+  releaseWakeLock() {
+    try { this._wake?.release(); } catch { /* schon frei */ }
+    this._wake = null;
+  },
+
+  kitchenEntries(iso, slot) {
+    return (this.db.plan[iso]?.slots?.[slot] || []).map((e) => {
+      const base = e.leftover ? previousDinner(this.db.plan, iso)[0] : e;
+      const recipe = base?.recipeId ? this.recipesById[base.recipeId] || null : null;
+      return { e, iso, title: this.dishTitle(e, iso), note: this.dishNote(e), recipe, video: recipe?.video ? videoEmbed(recipe.video) : null };
+    });
+  },
+
+  get kitchenDinner() {
+    return this.db ? this.kitchenEntries(this.today, 'dinner') : [];
+  },
+
+  get kitchenTomorrow() {
+    const iso = addDays(this.today, 1);
+    return {
+      iso,
+      label: this.dayLabel(iso),
+      breakfast: this.kitchenEntries(iso, 'breakfast'),
+      lunch: this.kitchenEntries(iso, 'lunch'),
+      dinner: this.kitchenEntries(iso, 'dinner').map((k) => {
+        const freezer = this.db.pantry.items.filter((it) => it.place.startsWith('freezer'));
+        const thaw = pantryMatch(k.title, freezer) || (k.recipe ? k.recipe.ingredients.map((l) => pantryMatch(l, freezer)).find(Boolean) : null);
+        return { ...k, thaw };
+      }),
+    };
+  },
+
+  // ------------------------------------------------------------ Statistik
+
+  openStats() {
+    this.statsView = { kind: this.statsView.kind || 'month', anchor: this.today };
+    this.openLayer('stats');
+  },
+
+  get statsPeriod() {
+    return periodOf(this.statsView.kind, this.statsView.anchor);
+  },
+
+  statsFor(period) {
+    const first = firstSeen(this.db.plan);
+    const opt = { today: this.today, titleOf: (e) => this.titleOf(e), first };
+    const cur = computeStats(this.db, period, opt);
+    const prevPeriod = periodOf(period.kind, shiftPeriod(period.kind, period.start, -1));
+    const prev = computeStats(this.db, prevPeriod, opt);
+    return { cur, prev, prevPeriod, compare: compareStats(cur, prev) };
+  },
+
+  get statsData() {
+    if (!this.db) return null;
+    return this.statsFor(this.statsPeriod);
+  },
+
+  setStatsKind(kind) {
+    this.statsView = { kind, anchor: this.statsView.anchor > this.today ? this.today : this.statsView.anchor };
+  },
+
+  shiftStats(dir) {
+    const next = shiftPeriod(this.statsView.kind, this.statsPeriod.start, dir);
+    if (dir > 0 && next > this.today) return;
+    this.statsView = { ...this.statsView, anchor: next };
+  },
+
+  get statsCanNext() {
+    return shiftPeriod(this.statsView.kind, this.statsPeriod.start, 1) <= this.today;
+  },
+
+  compareWord(kind) {
+    return { week: 'zur Vorwoche', month: 'zum Vormonat', year: 'zum Vorjahr' }[kind];
+  },
+
+  euro(n) {
+    return fmtEuro(n);
+  },
+
+  pct(n) {
+    return fmtPct(n);
+  },
+
+  diffText(row) {
+    return fmtDiff(row);
+  },
+
+  ratingText(v) {
+    return v == null ? '' : this.fmtRating(v);
+  },
+
+  // ------------------------------------------------------------ Nährwerte (KI)
+
+  nutriFor(period) {
+    return this.nutri[period.key] || null;
+  },
+
+  async estimateNutrition(period) {
+    if (!this.settings.keys.length) { this.notify('Für die Schätzung zuerst einen Gemini-Schlüssel in den Einstellungen hinterlegen.', { tone: 'error' }); return; }
+    const end = period.end < this.today ? period.end : this.today;
+    const dishes = periodDishes(this.db.plan, this.db.recipes, { start: period.start, end }, (e, iso) => this.dishTitle(e, iso));
+    if (!Object.keys(dishes).length) { this.notify('In diesem Zeitraum ist nichts eingetragen.'); return; }
+    const sig = nutriSignature(dishes);
+    const box = { busy: true, error: '', status: `Schätze mit ${modelLabel(nutriModels()[0])} …`, data: this.nutri[period.key]?.data || null, sig };
+    this.nutri = { ...this.nutri, [period.key]: box };
+    try {
+      const data = await generateJson({
+        keys: this.settings.keys, models: nutriModels(), quota,
+        system: NUTRI_SYSTEM, prompt: nutriPrompt(dishes), schema: NUTRI_SCHEMA,
+        temperature: 0.3, maxOutputTokens: 2048, thinking: 'low', timeoutMs: 40000, accept: acceptNutrition,
+        onRetry: ({ next }) => { if (next) this.nutri[period.key].status = `Weiter mit ${modelLabel(next)} …`; },
+      });
+      this.nutri[period.key] = { busy: false, error: '', status: '', data: readNutrition(data), sig, at: Date.now() };
+      const keep = Object.fromEntries(Object.entries(this.nutri).filter(([, v]) => v?.data && !v.busy).slice(-24).map(([k, v]) => [k, { data: v.data, sig: v.sig, at: v.at }]));
+      writeJson(NUTRI_KEY, keep);
+    } catch (e) {
+      this.nutri[period.key] = { ...this.nutri[period.key], busy: false, error: e?.message || 'Keine Schätzung erhalten.' };
+    }
+  },
+
+  nutriStale(period) {
+    const n = this.nutri[period.key];
+    if (!n?.data || !n.sig) return false;
+    const end = period.end < this.today ? period.end : this.today;
+    return n.sig !== nutriSignature(periodDishes(this.db.plan, this.db.recipes, { start: period.start, end }, (e, iso) => this.dishTitle(e, iso)));
+  },
+
+  // ------------------------------------------------------------ Rückblick (Wrapped)
+
+  hasData(period) {
+    return Object.keys(this.db.plan).some((iso) => iso >= period.start && iso <= period.end);
+  },
+
+  checkWrapped() {
+    if (this.locked || this.layers.length) return;
+    const seen = readJson(WRAP_KEY, {}) || {};
+    const queue = [];
+    const m = periodOf('month', shiftPeriod('month', this.today, -1));
+    if (seen.month !== m.key && this.hasData(m)) queue.push({ kind: 'month', anchor: m.start });
+    const y = periodOf('year', shiftPeriod('year', this.today, -1));
+    if (this.today.slice(5, 7) === '01' && seen.year !== y.key && this.hasData(y)) queue.push({ kind: 'year', anchor: y.start });
+    writeJson(WRAP_KEY, { ...seen, month: m.key, ...(this.today.slice(5, 7) === '01' ? { year: y.key } : {}) });
+    if (!queue.length) return;
+    this._wrapQueue = queue.slice(1);
+    this.openWrapped(queue[0].kind, queue[0].anchor);
+  },
+
+  openWrapped(kind, anchor) {
+    const period = periodOf(kind, anchor);
+    const { cur, compare, prevPeriod } = this.statsFor(period);
+    const slides = ['intro', 'cooked'];
+    if (cur.firsts.length) slides.push('fresh');
+    if (cur.dinnerDays) slides.push('orders');
+    if (compare.length) slides.push('compare');
+    slides.push('nutri', 'outro');
+    this.wrapped = { kind, period, prevPeriod, stats: cur, compare, slides, slide: 0, sharing: false, run: Date.now() };
+    if (this.isOpen('stats')) this.closeLayer('stats');
+    const open = () => { this.openLayer('wrapped'); this.wrapTimer(); };
+    if (this._popping > 0) this.afterPop().then(open);
+    else open();
+  },
+
+  get wrapSlide() {
+    return this.wrapped ? this.wrapped.slides[this.wrapped.slide] : '';
+  },
+
+  wrapTimer() {
+    clearTimeout(this._wrapTimer);
+    const w = this.wrapped;
+    if (!w || ['nutri', 'outro'].includes(this.wrapSlide)) return;
+    this._wrapTimer = setTimeout(() => this.wrapStep(1), 9000);
+  },
+
+  wrapStep(dir) {
+    const w = this.wrapped;
+    if (!w) return;
+    const next = w.slide + dir;
+    if (next < 0) return;
+    if (next >= w.slides.length) { this.closeLayer('wrapped'); return; }
+    w.slide = next;
+    w.run = Date.now();
+    this.wrapTimer();
+  },
+
+  wrapTap(ev) {
+    if (ev.target.closest('button, a, input')) return;
+    const r = ev.currentTarget.getBoundingClientRect();
+    this.wrapStep(ev.clientX - r.left < r.width * 0.32 ? -1 : 1);
+  },
+
+  wrappedClosed() {
+    clearTimeout(this._wrapTimer);
+    this.wrapped = null;
+    const next = this._wrapQueue?.shift();
+    if (next) setTimeout(() => this.openWrapped(next.kind, next.anchor), 450);
+  },
+
+  async shareWrapped() {
+    const w = this.wrapped;
+    if (!w || w.sharing) return;
+    w.sharing = true;
+    try {
+      const blob = await renderWrappedImage({
+        title: w.kind === 'month' ? w.period.short : w.period.label,
+        sub: w.kind === 'month' ? `Rückblick ${w.period.label}` : 'Jahresrückblick',
+        stats: w.stats, compare: w.compare, compareLabel: this.compareWord(w.kind).replace(/^z/, 'Z'),
+      });
+      const file = new File([blob], `rueckblick-${w.period.key.slice(1)}.png`, { type: 'image/png' });
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], text: `Unser ${w.period.label} in der Küche` });
+      } else {
+        const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: file.name });
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+        this.notify('Bild gespeichert – Teilen geht direkt nur auf dem Handy.');
+      }
+    } catch (e) {
+      if (e?.name !== 'AbortError') this.notify('Das Bild konnte nicht geteilt werden.', { tone: 'error' });
+    } finally {
+      if (this.wrapped === w) w.sharing = false;
+    }
+  },
+
+  // ------------------------------------------------------------ Einkauf: verfügbar ab, Vorrat, Wiederholung
+
+  openAvail(item) {
+    this.availBox = { id: item.id, name: item.name, from: item.from || null };
+    this.openLayer('avail');
+  },
+
+  setAvail(wd) {
+    const box = this.availBox;
+    const item = box && this.db.shopping.items.find((it) => it.id === box.id);
+    this.closeLayer('avail');
+    if (!item) return;
+    const from = wd == null ? null : nextWeekday(this.today, wd);
+    if (from && from > this.today) item.from = from;
+    else delete item.from;
+    this.commit();
+  },
+
+  weekdayOf(iso) {
+    return weekdayIndex(iso);
+  },
+
+  dayMonthOf(iso) {
+    return dayMonth(iso);
+  },
+
+  nextWeekdayIso(wd) {
+    return nextWeekday(this.today, wd);
+  },
+
+  availLabel(item) {
+    return item.from && item.from > this.today ? `ab ${WEEKDAYS_SHORT[weekdayIndex(item.from)]}.` : '';
+  },
+
+  recurLabel(item) {
+    const r = recurringOf(this.db.shopping, item.name);
+    return r ? (r.weeks === 1 ? 'jede Woche' : `alle ${r.weeks} Wo.`) : '';
+  },
+
+  checkToPantry(item) {
+    const snap = this.snapshot();
+    const place = placeForProduct(this.db.pantry, item.name, item.dept);
+    const res = addPantryItem(this.db.pantry, { name: item.name, qty: Math.max(1, item.qty || 1), place });
+    this.db.shopping.items = this.db.shopping.items.filter((it) => it.id !== item.id);
+    this.commit();
+    navigator.vibrate?.([10, 40, 10]);
+    this.notify(`„${res.item.name}" im Vorrat: ${placeOf(res.item.place).short}${res.merged ? ` · jetzt ${res.item.qty}` : ''}`, { undo: snap });
+  },
+
+  runRecurring() {
+    if (!this.db) return;
+    const added = applyRecurring(this.db.shopping, this.today);
+    if (!added.length) return;
+    this.commit();
+    for (const n of added) this.queueClassify(n);
+    this.notify(added.length === 1 ? `„${added[0]}" ist wieder fällig und steht auf der Liste` : `${added.length} wiederkehrende Einkäufe stehen auf der Liste`, { tone: 'ok' });
+  },
+
+  removeRecurring(r) {
+    this.db.shopping.recurring = this.db.shopping.recurring.filter((x) => x.key !== r.key);
+    this.commit();
+  },
+
+  // ------------------------------------------------------------ Teilen an die App
+
+  // Teilen-Ziel (Manifest share_target): Text/Link aus Instagram & Co. landet im KI-Import.
+  handleShareTarget() {
+    const q = new URLSearchParams(location.search);
+    if (!['share_title', 'share_text', 'share_url'].some((k) => q.has(k))) return false;
+    const text = [q.get('share_title'), q.get('share_text'), q.get('share_url')].map((v) => String(v || '').trim()).filter(Boolean)
+      .filter((v, i, all) => all.indexOf(v) === i).join('\n');
+    history.replaceState({ wp: 0 }, '', location.pathname);
+    if (!text) return false;
+    this.tab = 'recipes';
+    this.openEditor();
+    this.editor.importText = text;
+    this.editor.importOpen = true;
+    if (this.settings.keys.length && text.length >= 15) this.$nextTick(() => this.runImport());
+    else if (!this.settings.keys.length) { this.editor.status = 'Geteilter Text ist eingefügt. Für den Import fehlt noch ein Gemini-Schlüssel.'; this.editor.statusTone = 'error'; }
+    return true;
+  },
+
+  // ------------------------------------------------------------ Werkzeuge: Harry-Potter-Hörbücher
+
+  async hpInit() {
+    this.hp.canHandles = canPickHandles();
+    const saved = readJson(HP_KEY, {}) || {};
+    if (saved.pos?.book) this.hp.pos = { book: saved.pos.book, track: saved.pos.track || 0, time: saved.pos.time || 0 };
+    this.hp.sleep = saved.sleep || 0;
+    this.hp.lib = await loadLibrary();
+  },
+
+  hpState() {
+    return readJson(HP_KEY, {}) || {};
+  },
+
+  hpSave(extra = {}) {
+    if (!this.hp) return;
+    const cur = this.hpState();
+    const pos = { ...this.hp.pos, time: hpAudio && this.hp.loaded ? hpAudio.currentTime : this.hp.pos.time };
+    const positions = { ...(cur.positions || {}), [pos.book]: { track: pos.track, time: pos.time } };
+    writeJson(HP_KEY, { ...cur, pos, positions, sleep: this.hp.sleep, ...extra });
+  },
+
+  get hpCounts() {
+    const out = {};
+    for (const b of BOOKS) out[b.no] = this.hp.lib[b.no]?.tracks?.length || 0;
+    return out;
+  },
+
+  get hpHasAny() {
+    return Object.values(this.hpCounts).some((n) => n > 0);
+  },
+
+  get hpBook() {
+    return BOOKS.find((b) => b.no === this.hp.pos.book) || BOOKS[0];
+  },
+
+  get hpTrackName() {
+    const t = this.hp.lib[this.hp.pos.book]?.tracks?.[this.hp.pos.track];
+    return t ? t.name.replace(/\.[a-z0-9]+$/i, '').replace(/[_]+/g, ' ') : '';
+  },
+
+  hpClock(sec) {
+    return fmtClock(sec);
+  },
+
+  openHp() {
+    this.hp.error = '';
+    const st = this.hpState();
+    if (markDue(st.mark)) {
+      const m = st.mark;
+      const wasPlaying = this.hp.playing;
+      if (!wasPlaying) {
+        this.hp.pos = { book: m.book, track: m.track, time: m.time };
+        this.hp.loaded = false;
+        this.hp.current = m.time;
+        this.hp.notice = `Startpunkt von gestern Abend übernommen (${this.hpBook.roman} · ${fmtClock(m.time)}, ${new Date(m.at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr)`;
+      }
+      writeJson(HP_KEY, { ...st, mark: { ...m, applied: true }, pos: this.hp.pos });
+    }
+    if (!this.hp.loaded) this.hp.current = this.hp.pos.time;
+    this.openLayer('hp');
+  },
+
+  hpEnsureAudio() {
+    if (hpAudio) return hpAudio;
+    hpAudio = new Audio();
+    hpAudio.preload = 'auto';
+    const a = hpAudio;
+    a.addEventListener('timeupdate', () => this.hpTick());
+    a.addEventListener('loadedmetadata', () => {
+      this.hp.duration = a.duration || 0;
+      const durations = { ...(this.hpState().durations || {}) };
+      durations[this.hp.pos.book] = { ...(durations[this.hp.pos.book] || {}), [this.hp.pos.track]: a.duration };
+      this.hpSave({ durations });
+    });
+    a.addEventListener('play', () => { this.hp.playing = true; this._hpCont ||= { start: Date.now() }; this.hpMediaState(); });
+    a.addEventListener('pause', () => { this.hp.playing = false; this._hpCont = null; this.hpSave(); this.hpMediaState(); });
+    a.addEventListener('ended', () => this.hpNext());
+    a.addEventListener('error', () => { this.hp.error = 'Diese Datei lässt sich nicht abspielen.'; this.hp.playing = false; });
+    if ('mediaSession' in navigator) {
+      const ms = navigator.mediaSession;
+      const set = (k, fn) => { try { ms.setActionHandler(k, fn); } catch { /* nicht unterstützt */ } };
+      set('play', () => this.hpToggle(true));
+      set('pause', () => this.hpToggle(false));
+      set('seekbackward', () => this.hpSkip(-1));
+      set('seekforward', () => this.hpSkip(1));
+      set('previoustrack', () => this.hpSkip(-5));
+      set('nexttrack', () => this.hpSkip(5));
+      set('seekto', (d) => { if (d.seekTime != null) { a.currentTime = d.seekTime; this._hpCont = null; } });
+    }
+    return a;
+  },
+
+  hpMediaState() {
+    if (!('mediaSession' in navigator)) return;
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: this.hpTrackName || this.hpBook.title,
+        artist: `Harry Potter ${this.hpBook.roman}`,
+        album: `Harry Potter und ${this.hpBook.title.replace(/^Der |^Die |^Das /, (m) => m.toLowerCase())}`,
+      });
+      navigator.mediaSession.playbackState = this.hp.playing ? 'playing' : 'paused';
+    } catch { /* egal */ }
+  },
+
+  async hpLoad(pos, autoplay) {
+    const a = this.hpEnsureAudio();
+    this.hp.error = '';
+    try {
+      const file = await trackFile(this.hp.lib, pos.book, pos.track);
+      if (hpUrl) URL.revokeObjectURL(hpUrl);
+      hpUrl = URL.createObjectURL(file);
+      this.hp.pos = { ...pos };
+      this.hp.loaded = true;
+      a.src = hpUrl;
+      await new Promise((resolve) => {
+        const done = () => { a.removeEventListener('loadedmetadata', done); resolve(); };
+        a.addEventListener('loadedmetadata', done);
+        setTimeout(done, 4000);
+      });
+      try { a.currentTime = Math.min(pos.time || 0, Math.max(0, (a.duration || Infinity) - 1)); } catch { /* Anfang */ }
+      this.hp.current = a.currentTime;
+      if (autoplay) await a.play();
+      this.hpMediaState();
+      this.hpSave();
+    } catch (e) {
+      this.hp.loaded = false;
+      this.hp.playing = false;
+      this.hp.error = e?.name === 'NotAllowedError' ? 'Zum Abspielen bitte noch einmal tippen.' : e?.message || 'Die Datei konnte nicht geladen werden.';
+    }
+  },
+
+  async hpToggle(force = null) {
+    const a = this.hpEnsureAudio();
+    const play = force ?? a.paused;
+    if (!play) { a.pause(); return; }
+    this.hp.notice = '';
+    if (!this.hp.loaded) { await this.hpLoad(this.hp.pos, true); return; }
+    try { await a.play(); } catch { this.hp.error = 'Zum Abspielen bitte noch einmal tippen.'; }
+  },
+
+  hpTick() {
+    const a = hpAudio;
+    if (!a || this.hp.scrub) return;
+    this.hp.current = a.currentTime;
+    this.hp.pos.time = a.currentTime;
+    const now = Date.now();
+    if (now - (this._hpSavedAt || 0) > 5000) { this._hpSavedAt = now; this.hpSave(); }
+    if (this.hp.sleepUntil) {
+      const left = this.hp.sleepUntil - now;
+      this.hp.sleepLeft = Math.max(0, Math.ceil(left / 60000));
+      if (left <= 0) {
+        a.pause();
+        a.volume = 1;
+        this.hp.sleepUntil = 0;
+        this.hp.sleep = 0;
+        this.hpSave();
+      } else if (left < 15000) a.volume = Math.max(0.05, left / 15000);
+    }
+    // Abend-Startpunkt: das erste Mal an einem Abend (ab 20 Uhr) 5 Minuten am Stück gehört.
+    const c = this._hpCont;
+    if (c && !c.marked && now - c.start >= MARK_AFTER_MS) {
+      c.marked = true;
+      const key = eveningKey(c.start) && eveningKey(now);
+      const st = this.hpState();
+      if (key && st.mark?.evening !== key) {
+        writeJson(HP_KEY, { ...st, mark: { evening: key, book: this.hp.pos.book, track: this.hp.pos.track, time: a.currentTime, at: now, applied: false } });
+      }
+    }
+  },
+
+  async hpNext() {
+    const st = this.hpState();
+    const next = advance(this.hpCounts, this.hp.pos);
+    if (!next) { this.hp.playing = false; return; }
+    if (next.book !== this.hp.pos.book) writeJson(HP_KEY, { ...st, positions: { ...(st.positions || {}), [this.hp.pos.book]: { track: 0, time: 0 } } });
+    const cont = this._hpCont;
+    await this.hpLoad(next, true);
+    this._hpCont = cont;
+  },
+
+  async hpSkip(minutes) {
+    const a = this.hpEnsureAudio();
+    this._hpCont = this.hp.playing ? { start: Date.now() } : null;
+    const pos = { ...this.hp.pos, time: this.hp.loaded ? a.currentTime : this.hp.pos.time };
+    const target = seekAcross(this.hpState().durations, this.hpCounts, pos, minutes * 60);
+    if (!this.hp.loaded || target.track !== pos.track || target.book !== pos.book) {
+      if (this.hp.loaded) await this.hpLoad(target, this.hp.playing);
+      else { this.hp.pos = target; this.hp.current = target.time; this.hpSave(); }
+      return;
+    }
+    a.currentTime = target.time;
+    this.hp.current = target.time;
+    this.hpSave();
+  },
+
+  async hpSelectBook(no) {
+    if (no === this.hp.pos.book) return;
+    if (!this.hpCounts[no]) { this.notify(`Für Band ${BOOKS[no - 1].roman} sind noch keine Dateien hinterlegt (Einstellungen).`); return; }
+    this.hpSave();
+    const st = this.hpState();
+    const p = st.positions?.[no] || { track: 0, time: 0 };
+    const target = { book: no, track: Math.min(p.track || 0, this.hpCounts[no] - 1), time: p.time || 0 };
+    this._hpCont = null;
+    if (this.hp.loaded) await this.hpLoad(target, this.hp.playing);
+    else { this.hp.pos = target; this.hp.current = target.time; this.hp.duration = st.durations?.[no]?.[target.track] || 0; this.hpSave(); }
+  },
+
+  hpSetSleep(min) {
+    this.hp.sleep = min;
+    this.hp.sleepUntil = min ? Date.now() + min * 60000 : 0;
+    this.hp.sleepLeft = min;
+    if (hpAudio) hpAudio.volume = 1;
+    this.hpSave();
+  },
+
+  get hpDuration() {
+    return this.hp.duration || this.hpState().durations?.[this.hp.pos.book]?.[this.hp.pos.track] || 0;
+  },
+
+  get hpProgress() {
+    const d = this.hpDuration;
+    const t = this.hp.scrub ? this.hp.scrub.time : this.hp.current;
+    return d ? Math.max(0, Math.min(1, t / d)) : 0;
+  },
+
+  // Spulen: waagerecht ziehen; je höher der Daumen über den Regler wandert, desto feiner.
+  hpScrubStart(ev) {
+    const d = this.hpDuration;
+    if (!d) return;
+    const el = ev.currentTarget;
+    el.setPointerCapture?.(ev.pointerId);
+    const r = el.getBoundingClientRect();
+    const time = ((ev.clientX - r.left) / r.width) * d;
+    this.hp.scrub = { x: ev.clientX, y: ev.clientY, startY: ev.clientY, width: r.width, time: Math.max(0, Math.min(d, time)), moved: false, ...scrubFactor(0) };
+  },
+
+  hpScrubMove(ev) {
+    const s = this.hp.scrub;
+    if (!s) return;
+    const d = this.hpDuration;
+    const f = scrubFactor(Math.max(0, s.startY - ev.clientY));
+    const dx = ev.clientX - s.x;
+    if (Math.abs(dx) > 2 || Math.abs(ev.clientY - s.y) > 2) s.moved = true;
+    s.time = Math.max(0, Math.min(d - 0.5, s.time + (dx / s.width) * d * f.factor));
+    s.x = ev.clientX;
+    s.y = ev.clientY;
+    s.factor = f.factor;
+    s.label = f.label;
+  },
+
+  async hpScrubEnd() {
+    const s = this.hp.scrub;
+    if (!s) return;
+    this.hp.scrub = null;
+    this._hpCont = this.hp.playing ? { start: Date.now() } : null;
+    this.hp.current = s.time;
+    this.hp.pos.time = s.time;
+    if (this.hp.loaded && hpAudio) hpAudio.currentTime = s.time;
+    this.hpSave();
+  },
+
+  hpScrubKey(ev) {
+    const step = { ArrowLeft: -10, ArrowRight: 10, PageDown: -60, PageUp: 60 }[ev.key];
+    if (step == null) return;
+    ev.preventDefault();
+    this.hpSkip(step / 60);
+  },
+
+  // Einstellungen: Dateien je Band wählen.
+  async hpPickHandles(no) {
+    try {
+      const handles = await window.showOpenFilePicker({
+        multiple: true,
+        types: [{ description: 'Hörbuch', accept: { 'audio/*': ['.mp3', '.m4a', '.m4b', '.aac', '.ogg', '.opus', '.wav'] } }],
+      });
+      if (!handles.length) return;
+      const n = await saveHandles(no, handles);
+      this.hp.lib = await loadLibrary();
+      this.notify(`Band ${BOOKS[no - 1].roman}: ${n} ${n === 1 ? 'Datei' : 'Dateien'} gemerkt`, { tone: 'ok' });
+    } catch (e) {
+      if (e?.name !== 'AbortError') this.notify('Die Dateien konnten nicht übernommen werden.', { tone: 'error' });
+    }
+  },
+
+  async hpPickFiles(no, ev) {
+    const files = [...(ev.target.files || [])];
+    ev.target.value = '';
+    if (!files.length) return;
+    if (this.hp.pos.book === no && this.hp.loaded) { hpAudio?.pause(); this.hp.loaded = false; }
+    this.hp.copying = { book: no, pct: 0, n: 0, total: files.length };
+    try {
+      const n = await copyFiles(no, files, (pct, i, total) => { this.hp.copying = { book: no, pct, n: i, total }; });
+      this.hp.lib = await loadLibrary();
+      this.notify(`Band ${BOOKS[no - 1].roman}: ${n} ${n === 1 ? 'Datei' : 'Dateien'} gespeichert`, { tone: 'ok' });
+    } catch (e) {
+      this.notify(e?.name === 'QuotaExceededError' ? 'Zu wenig Speicherplatz auf dem Gerät.' : 'Die Dateien konnten nicht gespeichert werden.', { tone: 'error' });
+    } finally {
+      this.hp.copying = null;
+    }
+  },
+
+  async hpRemoveBook(no) {
+    const ok = await this.confirm(`Band ${BOOKS[no - 1].roman} entfernen?`, 'Die gemerkten Dateien werden aus der App entfernt. Die Originale auf dem Gerät bleiben unberührt.');
+    if (!ok) return;
+    if (this.hp.pos.book === no && this.hp.loaded) { hpAudio?.pause(); this.hp.loaded = false; }
+    await removeBook(no);
+    this.hp.lib = await loadLibrary();
+  },
+
+  hpBookSize(no) {
+    const t = this.hp.lib[no]?.tracks || [];
+    const mb = t.reduce((n, x) => n + (x.size || 0), 0) / 1048576;
+    return t.length ? `${t.length} ${t.length === 1 ? 'Datei' : 'Dateien'} · ${mb >= 1024 ? `${(mb / 1024).toFixed(1).replace('.', ',')} GB` : `${Math.round(mb)} MB`}` : 'Keine Dateien';
   },
 
   addWeek(monday, dir) {

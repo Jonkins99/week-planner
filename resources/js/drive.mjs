@@ -20,7 +20,7 @@ function loadGis() {
 }
 
 let cached = null;
-async function token(clientId) {
+async function token(clientId, silent = false) {
   if (cached && cached.clientId === clientId && cached.until > Date.now() + 60000) return cached.token;
   await loadGis();
   return new Promise((resolve, reject) => {
@@ -34,7 +34,8 @@ async function token(clientId) {
       },
       error_callback: (err) => reject(new Error(err?.message || 'Google-Anmeldung abgebrochen.')),
     });
-    client.requestAccessToken({ prompt: cached ? '' : 'consent' });
+    // Automatisch (ohne Rückfrage): nur wenn die Freigabe schon einmal erteilt wurde.
+    client.requestAccessToken({ prompt: silent ? 'none' : cached ? '' : 'consent' });
   });
 }
 
@@ -45,7 +46,16 @@ async function api(url, tok, init = {}) {
     try { msg = (await res.json())?.error?.message || msg; } catch { /* Status reicht */ }
     throw new Error(msg);
   }
-  return res.json();
+  return res.status === 204 ? null : res.json();
+}
+
+/** Ältere Sicherungen im Ordner löschen, sodass nur die neuesten `keep` bleiben. */
+async function prune(tok, parent, keep) {
+  const q = encodeURIComponent(`'${parent}' in parents and trashed=false and name contains 'week-planner-sicherung'`);
+  const list = await api(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=createdTime desc&pageSize=100&fields=files(id,name,createdTime)`, tok);
+  const old = (list?.files || []).slice(keep);
+  for (const f of old) await api(`https://www.googleapis.com/drive/v3/files/${f.id}`, tok, { method: 'DELETE' });
+  return old.length;
 }
 
 async function folderId(tok, known) {
@@ -66,10 +76,13 @@ async function folderId(tok, known) {
   return created.id;
 }
 
-/** Lädt `blob` als `name` hoch. Rückgabe: { fileId, folderId }. */
-export async function uploadToDrive({ clientId, blob, name, folder = null }) {
+/**
+ * Lädt `blob` als `name` hoch und behält danach nur die neuesten `keep` Sicherungen.
+ * Rückgabe: { fileId, folderId, removed }.
+ */
+export async function uploadToDrive({ clientId, blob, name, folder = null, keep = 3, silent = false }) {
   if (!clientId) throw new Error('Keine Google-Client-ID hinterlegt.');
-  const tok = await token(clientId);
+  const tok = await token(clientId, silent);
   const parent = await folderId(tok, folder);
   const boundary = `wp${Math.random().toString(36).slice(2)}`;
   const meta = JSON.stringify({ name, parents: [parent], mimeType: 'application/zip' });
@@ -84,5 +97,7 @@ export async function uploadToDrive({ clientId, blob, name, folder = null }) {
     headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
     body,
   });
-  return { fileId: file.id, folderId: parent };
+  let removed = 0;
+  try { removed = await prune(tok, parent, keep); } catch { /* Aufräumen ist zweitrangig */ }
+  return { fileId: file.id, folderId: parent, removed };
 }

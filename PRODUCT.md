@@ -33,9 +33,8 @@ Kein Rezeptportal, sondern das private Küchenbuch eines Haushalts: zwei Bewertu
 
 ## Capabilities and Constraints
 
-- Vier Hauptreiter in fester Fußleiste: Wochenplan, Einkauf, Rezepte, Vorrat. Jeder Reiter behält seinen Zustand beim Wechsel.
+- Fünf Hauptreiter in fester Fußleiste: Wochenplan, Einkauf, Rezepte, Vorrat und Werkzeuge (Helfer abseits der Küche, z. B. Harry-Potter-Hörbücher). Jeder Reiter behält seinen Zustand beim Wechsel.
 - Daten liegen gerätelokal (localStorage), Gemini-API-Schlüssel ebenfalls. Kein Backend.
-- Einkauf und Vorrat sind in dieser Ausbaustufe noch Platzhalter; folgen in späteren Aufträgen.
 - Kein Git auf dem Entwicklungsrechner; Übergabe per hochzählender ZIP.
 
 ## Brand Commitments

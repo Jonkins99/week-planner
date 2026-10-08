@@ -14,7 +14,13 @@ import { addPantryItem, pantryTree, emptyPantry } from '../resources/js/pantry.m
 import { readBrickMeals, brickSchema } from '../resources/js/pantry-ai.mjs';
 import { buildBackupZip, readBackupFile } from '../resources/js/backup.mjs';
 import { checkPassword } from '../resources/js/auth.mjs';
-import { updateEntry, emptyState } from '../resources/js/model.mjs';
+import { updateEntry, emptyState, isOrder, addRestaurant } from '../resources/js/model.mjs';
+import { suggestDinners, cookHistory, ingredientName, pantryMatch, similarRecipes, previousDinner } from '../resources/js/suggest.mjs';
+import { periodOf, shiftPeriod, computeStats, compareStats, fmtDiff } from '../resources/js/stats.mjs';
+import { setRecurring, applyRecurring, nextWeekday } from '../resources/js/shopping.mjs';
+import { belowMin, placeForProduct, sanitizePantry } from '../resources/js/pantry.mjs';
+import { eveningKey, markDue, advance, seekAcross, scrubFactor, sortTracks } from '../resources/js/hp.mjs';
+import { NUTRI_SCHEMA, readNutrition, periodDishes } from '../resources/js/nutrition-ai.mjs';
 
 let failed = 0;
 const pending = [];
@@ -239,6 +245,7 @@ test('Gemini-Schemas: keine leeren Enum-Werte', () => {
   walk(voiceSchema(['Lidl', 'Edeka']));
   walk(voiceSchema([]));
   walk(brickSchema([{ name: 'Reis', qty: 2, place: 'freezer/bricks/component' }]));
+  walk(NUTRI_SCHEMA);
   assert.equal(readVoice({ items: [{ name: 'Milch', quantity: 0, store: NO_STORE, dept: 'Kühlung' }] })[0].store, '');
 });
 
@@ -248,6 +255,128 @@ test('Seed: Altbestand vollständig', () => {
   const n = Object.values(seed.plan).reduce((a, d) => a + Object.values(d.slots).reduce((b, l) => b + l.length, 0), 0);
   assert.equal(n, 504);
   assert.equal(seed.shopping.items.length, 15);
+});
+
+test('Rest von gestern und Bestellung', () => {
+  const plan = {};
+  addEntry(plan, '2026-10-06', 'dinner', { title: 'Lasagne' });
+  const rest = addEntry(plan, '2026-10-07', 'lunch', { title: 'Rest von gestern Abend', leftover: true });
+  assert.equal(previousDinner(plan, '2026-10-07')[0].title, 'Lasagne');
+  const restaurants = [];
+  const r = addRestaurant(restaurants, 'Pizzeria Roma');
+  assert.equal(addRestaurant(restaurants, 'pizzeria roma'), r);
+  const o = addEntry(plan, '2026-10-07', 'dinner', { title: 'Bestellt', order: { rid: r.id, amount: '23,5', instead: 'Curry' } });
+  assert.equal(o.order.amount, 23.5);
+  assert.ok(isOrder(o) && isOrder({ title: 'Bestellen' }) && !isOrder({ title: 'Bestellen', recipeId: 'x' }));
+  const s = sanitizeState({ plan, restaurants });
+  assert.equal(s.plan['2026-10-07'].slots.lunch[0].leftover, true);
+  assert.equal(s.plan['2026-10-07'].slots.dinner[0].order.rid, r.id);
+  assert.equal(s.restaurants.length, 1);
+  updateEntry(plan, '2026-10-07', 'lunch', rest.id, { leftover: false });
+  assert.equal(plan['2026-10-07'].slots.lunch[0].leftover, undefined);
+});
+
+test('Statistik: Zeiträume, Quote, Erstmals, Vergleich', () => {
+  assert.equal(periodOf('month', '2026-10-08').start, '2026-10-01');
+  assert.equal(periodOf('month', '2026-02-10').end, '2026-02-28');
+  assert.equal(shiftPeriod('month', '2026-01-15', -1), '2025-12-01');
+  assert.equal(periodOf('week', '2026-10-08').start, '2026-10-05');
+  assert.equal(shiftPeriod('year', '2026-05-01', 1), '2027-01-01');
+  const recipes = [newRecipe({ id: 'r1', title: 'Curry', ratingElika: 5, ratingJanik: 4 })];
+  const plan = {};
+  addEntry(plan, '2026-08-20', 'dinner', { title: 'Curry', recipeId: 'r1' });
+  addEntry(plan, '2026-09-02', 'dinner', { title: 'Curry', recipeId: 'r1' });
+  addEntry(plan, '2026-09-03', 'dinner', { title: 'Bestellt', order: { rid: 'o1', amount: 30 } });
+  addEntry(plan, '2026-09-04', 'dinner', { title: 'Bestellen' });
+  addEntry(plan, '2026-09-05', 'dinner', { title: 'Neues Gericht' });
+  addEntry(plan, '2026-09-06', 'lunch', { title: 'Rest', leftover: true });
+  const st = computeStats({ plan, recipes, restaurants: [{ id: 'o1', name: 'Roma' }] }, periodOf('month', '2026-09-01'), { today: '2026-10-08' });
+  assert.equal(st.dinnerDays, 4);
+  assert.equal(st.orderDays, 2);
+  assert.equal(st.orderRate, 0.5);
+  assert.equal(st.spend, 30);
+  assert.equal(st.restaurants[0].name, 'Roma');
+  assert.equal(st.meals, 2);
+  assert.deepEqual(st.firsts.map((f) => f.title), ['Neues Gericht']);
+  const prev = computeStats({ plan, recipes }, periodOf('month', '2026-08-01'), { today: '2026-10-08' });
+  const cmp = compareStats(st, prev);
+  assert.equal(cmp.find((r) => r.key === 'orderRate').dir, 'up');
+  assert.equal(fmtDiff(cmp.find((r) => r.key === 'spend')), '+30,00 €');
+});
+
+test('Vorschläge, Kochhistorie, Zutaten, Dubletten', () => {
+  const recipes = ['Curry', 'Lasagne', 'Pizza', 'Chili sin Carne'].map((t, i) => newRecipe({ id: `r${i}`, title: t, ratingElika: 5 - i }));
+  const plan = {};
+  addEntry(plan, '2026-10-07', 'dinner', { title: 'Curry', recipeId: 'r0' });
+  addEntry(plan, '2026-10-01', 'dinner', { title: 'Pizza', recipeId: 'r2' });
+  addEntry(plan, '2026-10-12', 'dinner', { title: 'Pizza', recipeId: 'r2' });
+  let seed = 1;
+  const random = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const list = suggestDinners({ recipes, plan, iso: '2026-10-09', today: '2026-10-08', random });
+  assert.ok(!list.some((x) => x.recipeId === 'r0'), 'kürzlich gekocht fällt weg');
+  assert.ok(list.length >= 2 && list.length <= 10);
+  const h = cookHistory(plan, 'r2', '2026-10-08');
+  assert.deepEqual([h.count, h.last, h.next, h.daysSince], [1, '2026-10-01', '2026-10-12', 7]);
+  assert.equal(ingredientName('200 g Spaghetti (Vollkorn)'), 'Spaghetti');
+  assert.equal(ingredientName('2 EL Olivenöl'), 'Olivenöl');
+  assert.equal(ingredientName('1 Zwiebel, gewürfelt'), 'Zwiebel');
+  assert.equal(ingredientName('Salz, Pfeffer'), 'Salz, Pfeffer');
+  const pantry = [{ name: 'Reis', qty: 2, place: 'dry' }, { name: 'Kokosmilch', qty: 0, place: 'dry' }];
+  assert.equal(pantryMatch('250 g Basmati-Reis', pantry)?.name, 'Reis');
+  assert.equal(pantryMatch('1 Dose Kokosmilch', pantry), null);
+  assert.equal(similarRecipes(recipes, 'chili sin carne')[0].recipe.id, 'r3');
+  assert.equal(similarRecipes(recipes, 'Gemüsepfanne').length, 0);
+});
+
+test('Einkauf: Wiederholung, verfügbar ab; Vorrat: Mindestbestand', () => {
+  const sh = emptyShopping();
+  const { item } = addItem(sh, { name: 'Kaffee', store: 'aldi' });
+  setRecurring(sh, item, 2, '2026-10-08');
+  assert.equal(sh.recurring[0].next, '2026-10-22');
+  sh.items = [];
+  assert.deepEqual(applyRecurring(sh, '2026-10-21'), []);
+  assert.deepEqual(applyRecurring(sh, '2026-10-22'), ['Kaffee']);
+  assert.equal(sh.items[0].store, 'aldi');
+  assert.equal(sh.recurring[0].next, '2026-11-05');
+  assert.deepEqual(applyRecurring(sh, '2026-11-06'), []);
+  assert.equal(sanitizeShopping(JSON.parse(JSON.stringify(sh))).recurring[0].weeks, 2);
+  assert.equal(nextWeekday('2026-10-08', 3), '2026-10-08');
+  assert.equal(nextWeekday('2026-10-08', 0), '2026-10-12');
+  assert.ok(belowMin({ qty: 1, min: 2 }) && !belowMin({ qty: 2, min: 2 }) && !belowMin({ qty: 0 }));
+  assert.equal(sanitizePantry({ items: [{ name: 'Reis', qty: 1, min: 3 }] }).items[0].min, 3);
+  assert.equal(placeForProduct({ items: [] }, 'Erbsen', 'frozen'), 'freezer/other');
+});
+
+test('Hörbuch: Abend-Startpunkt, Weiterschalten, Spulen', () => {
+  assert.equal(eveningKey(new Date(2026, 9, 8, 21, 30).getTime()), '2026-10-08');
+  assert.equal(eveningKey(new Date(2026, 9, 9, 1, 10).getTime()), '2026-10-08');
+  assert.equal(eveningKey(new Date(2026, 9, 9, 14, 0).getTime()), null);
+  const mark = { evening: '2026-10-08', applied: false };
+  assert.ok(!markDue(mark, new Date(2026, 9, 9, 2, 0).getTime()));
+  assert.ok(markDue(mark, new Date(2026, 9, 9, 7, 0).getTime()));
+  const counts = { 1: 2, 2: 0, 3: 1, 4: 0, 5: 0, 6: 0, 7: 1 };
+  assert.deepEqual(advance(counts, { book: 1, track: 0 }), { book: 1, track: 1, time: 0 });
+  assert.deepEqual(advance(counts, { book: 1, track: 1 }), { book: 3, track: 0, time: 0 });
+  assert.deepEqual(advance(counts, { book: 7, track: 0 }), { book: 1, track: 0, time: 0 });
+  const dur = { 1: { 0: 600, 1: 600 } };
+  assert.deepEqual(seekAcross(dur, counts, { book: 1, track: 0, time: 500 }, 300), { book: 1, track: 1, time: 200 });
+  assert.deepEqual(seekAcross(dur, counts, { book: 1, track: 1, time: 60 }, -120), { book: 1, track: 0, time: 540 });
+  assert.equal(scrubFactor(0).factor, 1);
+  assert.ok(scrubFactor(250).factor < 0.25);
+  assert.deepEqual(sortTracks([{ name: 'Kap 10.mp3' }, { name: 'Kap 2.mp3' }]).map((t) => t.name), ['Kap 2.mp3', 'Kap 10.mp3']);
+});
+
+test('Nährwerte: Gerichte je Mahlzeit, Antwort säubern', () => {
+  const plan = {};
+  addEntry(plan, '2026-09-01', 'dinner', { title: 'Curry' });
+  addEntry(plan, '2026-09-02', 'dinner', { title: 'Curry' });
+  addEntry(plan, '2026-09-02', 'breakfast', { title: 'Müsli' });
+  const d = periodDishes(plan, [], { start: '2026-09-01', end: '2026-09-30' });
+  assert.equal(d.dinner[0].count, 2);
+  const n = readNutrition({ meals: [{ meal: 'dinner', values: { kcal: 650.4, protein: 30, carbs: 70, fat: 20, fiber: 8 } }], overall: { kcal: 500 }, comment: 'Gut.' });
+  assert.equal(n.meals[0].kcal, 650);
+  assert.equal(n.meals[0].label, 'Abendessen');
+  assert.equal(n.overall.kcal, 500);
 });
 
 await Promise.all(pending);

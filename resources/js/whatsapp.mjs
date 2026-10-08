@@ -17,7 +17,7 @@ export function weekText(plan, monday, titleOf = (e) => e.title) {
     ];
     for (const s of slots) {
       for (const e of day.slots?.[s.key] || []) {
-        const t = String(titleOf(e) || '').trim();
+        const t = String(titleOf(e, iso) || '').trim();
         const who = e.who === 'E' || e.who === 'J' ? `${e.who}: ` : '';
         if (t) lines.push(`${s.emoji} ${s.label ? `${s.label} · ` : ''}${who}${t}`);
       }

@@ -1,7 +1,7 @@
 // Vorrat: nur die Dinge, bei denen man leicht den Überblick verliert — vor allem die
 // Gefriertruhe mit LEGO-Bricks (portionsweise eingefrorene Gerichte und Komponenten).
 //
-// pantry = { items: [{ id, name, qty, place, updatedAt }] }
+// pantry = { items: [{ id, name, qty, place, updatedAt, min? }] }   min = Mindestbestand (0 = keiner)
 // place ist ein Pfad aus PLACES, z. B. 'freezer/bricks/dish'.
 
 import { uid } from './model.mjs';
@@ -74,6 +74,19 @@ export function sanitizePantry(raw) {
       qty: Math.max(0, Math.round(Number(it.qty) || 0)),
       place: PLACE_KEYS.includes(it.place) ? it.place : 'freezer/other',
       updatedAt: Number(it.updatedAt) || Date.now(),
+      ...(Number(it.min) > 0 ? { min: Math.min(999, Math.round(Number(it.min))) } : {}),
     }));
   return s;
+}
+
+/** Unter dem Mindestbestand? */
+export const belowMin = (item) => (item?.min || 0) > 0 && (item.qty || 0) < item.min;
+
+/** Ort für ein eingekauftes Produkt: wo es schon liegt, sonst nach Abteilung. */
+export function placeForProduct(pantry, name, dept) {
+  const same = pantry.items.find((it) => normalize(it.name) === normalize(name));
+  if (same) return same.place;
+  if (dept === 'frozen') return 'freezer/other';
+  if (dept === 'chilled' || dept === 'produce') return 'fridge';
+  return 'dry';
 }

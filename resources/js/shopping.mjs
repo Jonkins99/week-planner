@@ -1,9 +1,11 @@
 // Einkaufsliste: Läden, Abteilungen, Einträge und gemerkte Produkte (framework-frei).
 //
 // shopping = {
-//   items:   [{ id, name, qty, store, dept, createdAt }]     store = Laden-ID oder null
+//   items:   [{ id, name, qty, store, dept, createdAt, from? }] store = Laden-ID oder null,
+//                                                              from = verfügbar ab (YYYY-MM-DD)
 //   catalog: { <normName>: { name, dept, count, last } }      jedes je eingetragene Produkt
 //   stores:  [{ id, name }]                                   nur die selbst angelegten Läden
+//   recurring: [{ key, name, store, dept, weeks, next }]      kommt alle `weeks` Wochen auf die Liste
 // }
 // qty 0 heißt „ohne Mengenangabe".
 
@@ -60,7 +62,7 @@ export const FIXED_STORES = [
 ];
 
 export function emptyShopping() {
-  return { items: [], catalog: {}, stores: [], flags: {} };
+  return { items: [], catalog: {}, stores: [], recurring: [], flags: {} };
 }
 
 export function allStores(shopping) {
@@ -209,6 +211,65 @@ export function sanitizeShopping(raw) {
       store: it.store ? String(it.store) : null,
       dept: DEPT_RANK[it.dept] != null ? it.dept : null,
       createdAt: Number(it.createdAt) || Date.now(),
+      ...(ISO.test(it.from || '') ? { from: it.from } : {}),
+    }));
+  s.recurring = (Array.isArray(raw.recurring) ? raw.recurring : [])
+    .filter((r) => r && String(r.name || '').trim() && Number(r.weeks) > 0 && ISO.test(r.next || ''))
+    .map((r) => ({
+      key: keyOf(r.name),
+      name: String(r.name).trim(),
+      store: r.store ? String(r.store) : null,
+      dept: DEPT_RANK[r.dept] != null ? r.dept : null,
+      weeks: Math.max(1, Math.min(52, Math.round(Number(r.weeks)))),
+      next: r.next,
     }));
   return s;
+}
+
+const ISO = /^\d{4}-\d{2}-\d{2}$/;
+
+// ---------------------------------------------------------------- Wiederkehrend & verfügbar ab
+
+export function recurringOf(shopping, name) {
+  return (shopping.recurring || []).find((r) => r.key === keyOf(name)) || null;
+}
+
+/** Alle `weeks` Wochen (0 = aus). Die nächste Fälligkeit liegt `weeks` Wochen nach heute. */
+export function setRecurring(shopping, item, weeks, today) {
+  shopping.recurring ||= [];
+  shopping.recurring = shopping.recurring.filter((r) => r.key !== keyOf(item.name));
+  const w = Math.max(0, Math.min(52, Math.round(Number(weeks) || 0)));
+  if (!w) return null;
+  const r = { key: keyOf(item.name), name: item.name, store: item.store || null, dept: item.dept || null, weeks: w, next: addDaysIso(today, w * 7) };
+  shopping.recurring.push(r);
+  return r;
+}
+
+/** Fällige Produkte auf die Liste setzen (falls nicht schon drauf). Rückgabe: Namen. */
+export function applyRecurring(shopping, today) {
+  const added = [];
+  for (const r of shopping.recurring || []) {
+    if (r.next > today) continue;
+    const onList = shopping.items.some((it) => keyOf(it.name) === r.key);
+    if (!onList) {
+      addItem(shopping, { name: r.name, store: r.store, dept: r.dept });
+      added.push(r.name);
+    }
+    while (r.next <= today) r.next = addDaysIso(r.next, r.weeks * 7);
+  }
+  return added;
+}
+
+/** Nächster Tag mit Wochentag `wd` (0 = Montag) ab heute, heute eingeschlossen. */
+export function nextWeekday(today, wd) {
+  const d = new Date(`${today}T12:00:00`);
+  const cur = (d.getDay() + 6) % 7;
+  return addDaysIso(today, (wd - cur + 7) % 7);
+}
+
+function addDaysIso(iso, n) {
+  const d = new Date(`${iso}T12:00:00`);
+  d.setDate(d.getDate() + n);
+  const p = (x) => String(x).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
