@@ -15,8 +15,8 @@
   <link rel="icon" type="image/png" sizes="48x48" href="./icons/favicon-48.png">
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
   <style>html,body{color:#14203f;background:#e7ecf3;margin:0}@media (prefers-color-scheme:dark){html,body{color:#eef2fb;background:#0d1322}}[x-cloak]{display:none!important}</style>
-  <script type="module" crossorigin src="./assets/index-igaZDCWd.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-BwWmuhnX.css">
+  <script type="module" crossorigin src="./assets/index-DWluXJ-Y.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-DJuI0NI1.css">
 </head>
 <body x-data="app" :class="{ 'has-layer': layers.some(l => l !== 'menu' && l !== 'detail'), 'is-composing': shopFocus && (tab === 'shop' || tab === 'pantry'), 'on-shop': tab === 'shop' || tab === 'pantry' }">
 <!--
@@ -478,7 +478,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
             <span class="tile-hp-now" x-show="hp.playing"><i></i><i></i><i></i><span x-text="`Band ${hpBook.roman}`"></span></span>
           </button>
 
-          <div class="tile tile--aqua is-soon" aria-disabled="true">
+          <button class="tile tile--aqua" @click="$dispatch('aqua-open')" aria-label="Aquarium-Helfer öffnen">
             <span class="aqua-water" aria-hidden="true">
               <svg class="aqua-fish aqua-fish--a" viewBox="0 0 60 30"><ellipse cx="24" cy="15" rx="20" ry="10"/><path d="M42 15 58 4v22Z"/><circle cx="14" cy="12" r="2.2" class="eye"/></svg>
               <svg class="aqua-fish aqua-fish--b" viewBox="0 0 60 30"><ellipse cx="24" cy="15" rx="20" ry="10"/><path d="M42 15 58 4v22Z"/><circle cx="14" cy="12" r="2.2" class="eye"/></svg>
@@ -486,8 +486,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
               <span class="aqua-sand"></span>
             </span>
             <span class="tile-label">Aquarium-Helfer</span>
-            <span class="tile-soon">Bald</span>
-          </div>
+          </button>
 
           <div class="tile tile--todo is-soon" aria-disabled="true">
             <span class="todo-card" aria-hidden="true">
@@ -499,7 +498,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
             <span class="tile-soon">Bald</span>
           </div>
 
-          <div class="tile tile--swipe is-soon" aria-disabled="true">
+          <button class="tile tile--swipe" @click="$dispatch('sorter-open')" aria-label="Datei-Aussortierer öffnen">
             <span class="swipe-stack" aria-hidden="true">
               <span class="swipe-card swipe-card--back"></span>
               <span class="swipe-card swipe-card--mid"></span>
@@ -508,8 +507,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
               <span class="swipe-yes"><svg viewBox="0 0 24 24"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg></span>
             </span>
             <span class="tile-label">Datei-Aussortierer</span>
-            <span class="tile-soon">Bald</span>
-          </div>
+          </button>
 
           <div class="tile tile--kick is-soon" aria-disabled="true">
             <span class="kick-pitch" aria-hidden="true">
@@ -872,34 +870,6 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
         <p class="block-text block-text--fine" x-show="backup.status" x-text="backup.status" role="status"></p>
         <p class="backup-age" x-text="lastBackupText"></p>
         <p class="block-text block-text--fine" x-show="backupAuto">Die fällige Sicherung startet beim ersten Antippen nach dem Öffnen der App (Google erlaubt die Anmeldung nur nach einer Berührung). Einmal muss die Freigabe über „In Drive sichern“ erteilt worden sein.</p>
-      </section>
-
-      <section class="block">
-        <h3 class="block-title">Harry-Potter-Hörbücher</h3>
-        <p class="block-text" x-show="hp.canHandles">Je Band die MP3-Dateien wählen (mehrere auf einmal). Die App merkt sich den Ort der Dateien; nach einem Neustart fragt der Browser höchstens einmal nach Zugriff.</p>
-        <p class="block-text" x-show="!hp.canHandles">Je Band die MP3-Dateien wählen (mehrere auf einmal). Sie werden einmalig in den geschützten Speicher der App kopiert und stehen danach dauerhaft bereit – auch ohne die Originale.</p>
-        <ul class="plate-list hp-books">
-          <template x-for="b in BOOKS" :key="b.no">
-            <li class="hp-book-row">
-              <span class="key-no" x-text="b.roman"></span>
-              <span class="hp-book-text">
-                <b x-text="b.title"></b>
-                <span x-show="hp.copying?.book !== b.no" x-text="hpBookSize(b.no)"></span>
-                <span x-show="hp.copying?.book === b.no" x-text="`Wird gespeichert … ${hp.copying?.n || 0}/${hp.copying?.total || 0} · ${Math.round((hp.copying?.pct || 0) * 100)} %`"></span>
-              </span>
-              <button class="round-btn round-btn--quiet" x-show="hp.lib[b.no]" @click="hpRemoveBook(b.no)" :aria-label="`Band ${b.roman} entfernen`"><span x-icon="'trash'"></span></button>
-              <template x-if="hp.canHandles">
-                <button class="btn btn--small" @click="hpPickHandles(b.no)" :disabled="!!hp.copying"><span x-icon="'folder'"></span>Wählen</button>
-              </template>
-              <template x-if="!hp.canHandles">
-                <label class="btn btn--small" :class="{ 'is-disabled': hp.copying }">
-                  <span x-icon="'folder'"></span>Wählen
-                  <input type="file" multiple accept="audio/*,.mp3,.m4a,.m4b" class="sr-only" :disabled="!!hp.copying" @change="hpPickFiles(b.no, $event)">
-                </label>
-              </template>
-            </li>
-          </template>
-        </ul>
       </section>
     </div>
   </div>
@@ -1544,12 +1514,11 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 <!-- ============================================================ HARRY-POTTER-PLAYER -->
 <div class="hp" role="dialog" aria-modal="true" aria-labelledby="hp-title" x-show="isOpen('hp')" x-transition:enter="page-enter" x-transition:enter-start="page-from" x-transition:leave="page-leave" x-transition:leave-end="page-from" x-cloak>
   <span class="hp-glow" aria-hidden="true"></span>
-  <span class="hp-candles hp-candles--hall" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
   <div class="hp-inner">
     <header class="hp-bar">
       <button class="hp-round" @click="closeLayer('hp')" aria-label="Zurück"><span x-icon="'back'"></span></button>
       <h2 id="hp-title" class="hp-brand">Harry Potter</h2>
-      <button class="hp-round" @click="openSettings()" aria-label="Hörbuch-Dateien in den Einstellungen wählen"><span x-icon="'library'"></span></button>
+      <button class="hp-round" @click="openLayer('hp-files')" aria-label="Bücherregal: Hörbuch-Dateien wählen"><span x-icon="'library'"></span></button>
     </header>
 
     <div class="hp-seals" role="radiogroup" aria-label="Band wählen" x-hscroll>
@@ -1567,10 +1536,14 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     <p class="hp-notice" x-show="hp.notice" x-text="hp.notice" role="status"></p>
     <p class="hp-error" x-show="hp.error" x-text="hp.error" role="alert"></p>
 
+    <div class="hp-hall" aria-hidden="true">
+      <span class="hp-candles hp-candles--hall"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+    </div>
+
     <template x-if="!hpHasAny">
       <div class="hp-empty">
-        <p>Die Bücher stehen noch nicht im Regal. Wähle die MP3-Dateien der sieben Bände einmalig in den Einstellungen aus.</p>
-        <button class="hp-btn" @click="openSettings()"><span x-icon="'folder'"></span>Dateien wählen</button>
+        <p>Die Bücher stehen noch nicht im Regal. Stell die MP3-Dateien der sieben Bände einmalig über das Bücherregal ein.</p>
+        <button class="hp-btn" @click="openLayer('hp-files')"><span x-icon="'library'"></span>Zum Bücherregal</button>
       </div>
     </template>
 
@@ -1610,6 +1583,783 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
         </div>
       </div>
     </template>
+  </div>
+</div>
+
+<!-- ============================================================ HARRY-POTTER: BÜCHERREGAL -->
+<div class="hp hp-shelf" role="dialog" aria-modal="true" aria-labelledby="hp-shelf-title" x-show="isOpen('hp-files')" x-transition:enter="page-enter" x-transition:enter-start="page-from" x-transition:leave="page-leave" x-transition:leave-end="page-from" x-cloak>
+  <div class="hp-inner">
+    <header class="hp-bar">
+      <button class="hp-round" @click="closeLayer('hp-files')" aria-label="Zurück"><span x-icon="'back'"></span></button>
+      <h2 id="hp-shelf-title" class="hp-brand">Bücherregal</h2>
+      <span class="hp-round-spacer"></span>
+    </header>
+    <p class="hp-shelf-text" x-show="hp.canHandles">Je Band die MP3-Dateien wählen (mehrere auf einmal). Die App merkt sich nur den Ort der Dateien; nach einem Neustart fragt der Browser höchstens einmal nach Zugriff.</p>
+    <p class="hp-shelf-text" x-show="!hp.canHandles">Je Band die MP3-Dateien wählen (mehrere auf einmal). Sie werden einmalig in den geschützten Speicher der App kopiert und stehen danach dauerhaft bereit – auch ohne die Originale.</p>
+    <ul class="hp-shelf-list">
+      <template x-for="b in BOOKS" :key="b.no">
+        <li class="hp-shelf-row" :class="{ 'is-filled': hp.lib[b.no] }">
+          <span class="hp-seal hp-seal--small" :class="{ 'is-empty': !hpCounts[b.no] }" x-text="b.roman"></span>
+          <span class="hp-shelf-book">
+            <b x-text="b.title"></b>
+            <span x-show="hp.copying?.book !== b.no" x-text="hpBookSize(b.no)"></span>
+            <span x-show="hp.copying?.book === b.no" x-text="`Wird gespeichert … ${hp.copying?.n || 0}/${hp.copying?.total || 0} · ${Math.round((hp.copying?.pct || 0) * 100)} %`"></span>
+          </span>
+          <button class="hp-round hp-round--small" x-show="hp.lib[b.no]" @click="hpRemoveBook(b.no)" :aria-label="`Band ${b.roman} entfernen`"><span x-icon="'trash'"></span></button>
+          <template x-if="hp.canHandles">
+            <button class="hp-pick" @click="hpPickHandles(b.no)" :disabled="!!hp.copying"><span x-icon="'folder'"></span>Wählen</button>
+          </template>
+          <template x-if="!hp.canHandles">
+            <label class="hp-pick" :class="{ 'is-disabled': hp.copying }">
+              <span x-icon="'folder'"></span>Wählen
+              <input type="file" multiple accept="audio/*,.mp3,.m4a,.m4b" class="sr-only" :disabled="!!hp.copying" @change="hpPickFiles(b.no, $event)">
+            </label>
+          </template>
+        </li>
+      </template>
+    </ul>
+  </div>
+</div>
+
+<!-- ============================================================ AQUARIUM-HELFER (eigene Komponente `aqua`) -->
+<div class="aq-root" x-data="aqua" @aqua-open.window="open()">
+  <div class="aq" role="dialog" aria-modal="true" aria-labelledby="aq-title" x-show="isOpen('aqua')" x-transition:enter="page-enter" x-transition:enter-start="page-from" x-transition:leave="page-leave" x-transition:leave-end="page-from" x-cloak>
+    <span class="aq-light" aria-hidden="true"></span>
+    <header class="aq-bar">
+      <button class="aq-round" @click="closeLayer('aqua')" aria-label="Zurück"><span x-icon="'back'"></span></button>
+      <h2 id="aq-title" class="aq-brand">Aquarium</h2>
+      <button class="aq-round" @click="openAquaSettings()" aria-label="Aquarium-Einstellungen"><span x-icon="'settings'"></span></button>
+    </header>
+
+    <div class="aq-tanks" role="tablist" aria-label="Becken">
+      <template x-for="t in d.tanks" :key="t.id">
+        <button class="aq-tank" role="tab" :aria-selected="tankId === t.id" @click="tankId = t.id">
+          <span class="aq-tank-name" x-text="t.name"></span>
+          <span class="aq-tank-sub" x-text="[/\d/.test(t.name) || !t.liters ? '' : `${t.liters} l`, `${t.stock.length} ${t.stock.length === 1 ? 'Art' : 'Arten'}`].filter(Boolean).join(' · ')"></span>
+          <i class="aq-dot" :class="`is-${tankIssueLevel(t.id)}`" x-show="tankIssueLevel(t.id) >= 2" aria-label="Schieflage"></i>
+        </button>
+      </template>
+    </div>
+
+    <div class="aq-scroll">
+      <!-- ---------------------------------------------------------------- WERTE -->
+      <div class="aq-section" x-show="section === 'values'">
+        <div class="aq-gauges">
+          <template x-for="p in PARAMS" :key="p.key">
+            <div class="aq-gauge" :class="`is-${paramState(p.key, latest[p.key]?.v)}`">
+              <span class="aq-gauge-label"><span x-text="p.label"></span><small x-text="p.unit"></small></span>
+              <span class="aq-gauge-value"><b x-text="fmt(p.key, latest[p.key]?.v)"></b></span>
+              <span class="aq-gauge-meta">
+                <template x-if="latest[p.key]?.prev != null && latest[p.key].prev !== latest[p.key].v">
+                  <span class="aq-trend" x-icon="latest[p.key].v > latest[p.key].prev ? 'trend-up' : 'trend-down'"></span>
+                </template>
+                <span x-text="latest[p.key] ? ago(latest[p.key].at) : fmtRange(p.key)"></span>
+              </span>
+            </div>
+          </template>
+          <button class="aq-gauge aq-gauge--targets" @click="openTargets()"><span x-icon="'target'"></span><span>Zielwerte</span></button>
+        </div>
+
+        <section class="aq-card aq-issues">
+          <header class="aq-card-head">
+            <h3>Aufgaben &amp; Schieflagen</h3>
+            <button class="aq-chip-btn" @click="runAdvice()" :disabled="adviceBusy">
+              <span :class="{ spin: adviceBusy }" x-icon="adviceBusy ? 'spinner' : 'sparkles'"></span><span x-text="adviceBusy ? 'KI denkt …' : 'KI-Maßnahmen'"></span>
+            </button>
+          </header>
+          <p class="aq-fine" x-show="adviceStatus" x-text="adviceStatus" role="status"></p>
+          <ul class="aq-issue-list">
+            <template x-for="i in issues" :key="i.id">
+              <li class="aq-issue" :class="`is-l${i.level}`">
+                <span class="aq-issue-icon" x-icon="i.level >= 2 ? 'warn' : i.kind === 'wc' ? 'drops' : 'info'"></span>
+                <span class="aq-issue-text"><b x-text="i.title"></b><span x-text="i.detail"></span></span>
+              </li>
+            </template>
+            <li class="aq-issue is-ok" x-show="!issues.length">
+              <span class="aq-issue-icon" x-icon="'check-circle'"></span>
+              <span class="aq-issue-text"><b>Alles im Zielbereich</b><span>Keine offenen Aufgaben für dieses Becken.</span></span>
+            </li>
+          </ul>
+          <template x-if="tank.advice">
+            <div class="aq-advice">
+              <p class="aq-advice-sum"><span x-icon="'sparkles'"></span><span x-text="tank.advice.summary"></span></p>
+              <ol class="aq-advice-list">
+                <template x-for="(a, i) in tank.advice.actions" :key="i">
+                  <li><span class="aq-urgency" :class="`is-${a.urgency}`" x-text="a.urgency"></span><b x-text="a.title"></b><span x-text="a.detail"></span></li>
+                </template>
+              </ol>
+              <p class="aq-fine" x-text="`KI-Einschätzung vom ${when(tank.advice.at)}`"></p>
+            </div>
+          </template>
+        </section>
+
+        <div class="aq-toolbar">
+          <div class="aq-seg" role="radiogroup" aria-label="Darstellung">
+            <button role="radio" :aria-checked="mode === 'chart'" @click="mode = 'chart'"><span x-icon="'chart'"></span>Diagramme</button>
+            <button role="radio" :aria-checked="mode === 'list'" @click="mode = 'list'"><span x-icon="'list'"></span>Liste</button>
+          </div>
+        </div>
+
+        <template x-if="!list.length">
+          <div class="aq-empty">
+            <svg class="aq-empty-fish" viewBox="0 0 60 30" aria-hidden="true"><ellipse cx="24" cy="15" rx="20" ry="10"/><path d="M42 15 58 4v22Z"/><circle cx="14" cy="12" r="2.2"/></svg>
+            <p>Noch keine Messung für dieses Becken. Einzelne Werte reichen – der Rest kommt mit der Zeit.</p>
+          </div>
+        </template>
+
+        <template x-if="list.length && mode === 'chart'">
+          <div class="aq-charts">
+            <div class="aq-range">
+              <div class="aq-presets" role="radiogroup" aria-label="Zeitraum">
+                <template x-for="p in PRESETS" :key="p.key">
+                  <button role="radio" :aria-checked="preset === p.key" @click="setPreset(p.key)" x-text="p.label"></button>
+                </template>
+              </div>
+              <button class="aq-round aq-round--small" @click="zoom(1.6)" aria-label="Herauszoomen"><span x-icon="'zoom-out'"></span></button>
+              <button class="aq-round aq-round--small" @click="zoom(0.6)" aria-label="Hineinzoomen"><span x-icon="'zoom-in'"></span></button>
+            </div>
+            <p class="aq-fine aq-hint">Ziehen verschiebt, zwei Finger zoomen, Antippen zeigt die Messung. <span class="aq-legend"><i class="aq-legend-band"></i>Ziel <i class="aq-legend-wc"></i>Wasserwechsel</span></p>
+            <template x-for="p in chartParams" :key="p.key">
+              <section class="aq-card aq-chart-card" :class="`is-${paramState(p.key, latest[p.key]?.v)}`">
+                <header class="aq-chart-head">
+                  <h3 x-text="p.label"></h3>
+                  <span class="aq-chart-now" x-text="fmtU(p.key, latest[p.key]?.v)"></span>
+                  <span class="aq-chart-target" x-text="`Ziel ${fmtRange(p.key)}`"></span>
+                </header>
+                <div class="aq-chart" x-init="mountChart($el, p.key)"></div>
+              </section>
+            </template>
+          </div>
+        </template>
+
+        <template x-if="list.length && mode === 'list'">
+          <div class="aq-listview">
+            <div class="aq-cols" role="group" aria-label="Spalten ein- und ausblenden">
+              <template x-for="p in PARAMS" :key="p.key">
+                <button class="aq-col" :aria-pressed="!!cols[p.key]" @click="toggleCol(p.key)" x-text="p.label"></button>
+              </template>
+            </div>
+            <div class="aq-table-wrap">
+              <table class="aq-table">
+                <thead>
+                  <tr><th scope="col">Zeitpunkt</th><template x-for="p in visibleCols" :key="p.key"><th scope="col"><span x-text="p.label"></span><small x-text="p.unit"></small></th></template></tr>
+                </thead>
+                <tbody>
+                  <template x-for="m in listDesc" :key="m.id">
+                    <tr @click="editMeasurement(m)" :class="{ 'is-wc': m.phase }">
+                      <th scope="row">
+                        <span class="aq-when" x-text="when(m.at)"></span>
+                        <span class="aq-tags">
+                          <span class="aq-tag" x-show="m.phase" x-text="m.phase === 'before' ? 'Vor WW' : 'Nach WW'"></span>
+                          <span class="aq-tag aq-tag--note" x-show="m.note" x-icon="'note'"></span>
+                        </span>
+                      </th>
+                      <template x-for="p in visibleCols" :key="p.key">
+                        <td :class="`is-${paramState(p.key, m.values[p.key])}`" x-text="fmt(p.key, m.values[p.key])"></td>
+                      </template>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+            <p class="aq-fine">Zeile antippen zum Bearbeiten. Rot: außerhalb des Zielbereichs.</p>
+          </div>
+        </template>
+      </div>
+
+      <!-- ---------------------------------------------------------------- PFLEGE -->
+      <div class="aq-section" x-show="section === 'care'">
+        <section class="aq-card aq-wc">
+          <header class="aq-card-head"><h3>Wasserwechsel</h3><span class="aq-fine" x-show="lastWc" x-text="`Zuletzt ${when(lastWc, { time: false })}`"></span></header>
+          <p class="aq-wc-due" :class="{ 'is-over': nextWc && nextWc < Date.now() }" x-text="tank.wc.enabled ? dueText(nextWc) : 'Erinnerung ist aus'"></p>
+          <button class="aq-btn aq-btn--primary aq-btn--wide" @click="waterChangedNow()"><span x-icon="'drops'"></span>Jetzt gewechselt</button>
+          <div class="aq-wc-measure">
+            <button class="aq-btn" @click="newMeasurement('before')"><span x-icon="'plus'"></span>Messung vor WW</button>
+            <button class="aq-btn" @click="newMeasurement('after')"><span x-icon="'plus'"></span>Messung nach WW</button>
+          </div>
+          <div class="aq-form-row">
+            <label class="aq-field">
+              <span>Alle</span>
+              <span class="aq-stepper">
+                <button @click="setWc('every', tank.wc.every - 1)" aria-label="Einen Tag weniger"><span x-icon="'minus'"></span></button>
+                <b x-text="tank.wc.every"></b>
+                <button @click="setWc('every', tank.wc.every + 1)" aria-label="Einen Tag mehr"><span x-icon="'plus'"></span></button>
+              </span>
+              <span>Tage</span>
+            </label>
+            <label class="aq-field">
+              <span>um</span>
+              <input type="time" class="aq-input aq-input--time" :value="tank.wc.time" @change="setWc('time', $event.target.value)" aria-label="Uhrzeit der Erinnerung">
+            </label>
+          </div>
+          <label class="aq-switch"><input type="checkbox" :checked="tank.wc.enabled" @change="setWc('enabled', $event.target.checked)"><span></span>Erinnern (wird ab dem 2. Verschieben eindringlicher)</label>
+          <details class="aq-history" x-show="wcHistory.length">
+            <summary x-text="`Verlauf · ${wcHistory.length} Wechsel`"></summary>
+            <ul>
+              <template x-for="w in wcHistory" :key="w.at">
+                <li>
+                  <span x-text="when(w.at)"></span>
+                  <span class="aq-fine" x-text="w.derived ? 'aus Messungen vor/nach' : 'eingetragen'"></span>
+                  <span class="aq-gap" x-show="w.gap" x-text="`${String(w.gap).replace('.', ',')} T`"></span>
+                  <button class="aq-icon-btn" x-show="!w.derived" @click="removeWaterChange(w)" aria-label="Eintrag entfernen"><span x-icon="'trash'"></span></button>
+                </li>
+              </template>
+            </ul>
+          </details>
+        </section>
+
+        <section class="aq-card" x-show="todayFeedings.length">
+          <header class="aq-card-head"><h3>Heute füttern</h3></header>
+          <ul class="aq-today">
+            <template x-for="ev in todayFeedings" :key="ev.key">
+              <li :class="{ 'is-done': ev.state.done }">
+                <b x-text="new Date(ev.at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })"></b>
+                <span x-text="foodNames(ev.foods)"></span>
+                <button class="aq-btn aq-btn--small" x-show="!ev.state.done" @click="feedDone(ev)"><span x-icon="'check'"></span>Erledigt</button>
+                <span class="aq-done" x-show="ev.state.done" x-icon="'check-circle'"></span>
+              </li>
+            </template>
+          </ul>
+        </section>
+
+        <section class="aq-card">
+          <header class="aq-card-head">
+            <h3>Futterplan</h3>
+            <label class="aq-switch aq-switch--inline"><input type="checkbox" x-model="tank.feedEnabled" @change="save()"><span></span>Erinnern</label>
+          </header>
+          <p class="aq-fine" x-show="!d.foods.length">Erst unten Futtermittel anlegen, dann je Tag bis zu drei Fütterungen planen. Der Plan wiederholt sich jede Woche.</p>
+          <ul class="aq-week">
+            <template x-for="(slots, day) in tank.feed" :key="day">
+              <li class="aq-day" :class="{ 'is-today': day === todayIndex }">
+                <span class="aq-day-name" x-text="WD_SHORT[day]"></span>
+                <span class="aq-slots">
+                  <template x-for="(s, i) in slots" :key="s.id">
+                    <button class="aq-slot" :class="{ 'is-empty': !s.foods.length }" @click="editSlot(day, i)">
+                      <b x-text="s.time"></b><span x-text="s.foods.length ? foodNames(s.foods) : 'Futter wählen'"></span>
+                    </button>
+                  </template>
+                  <button class="aq-slot aq-slot--add" x-show="slots.length < MAX_FEED_SLOTS" @click="addSlot(day)" :aria-label="`Fütterung am ${WEEKDAYS[day]} hinzufügen`"><span x-icon="'plus'"></span></button>
+                </span>
+              </li>
+            </template>
+          </ul>
+        </section>
+
+        <section class="aq-card">
+          <header class="aq-card-head"><h3>Futtermittel</h3></header>
+          <ul class="aq-foods">
+            <template x-for="f in d.foods" :key="f.id">
+              <li><span x-icon="'food'"></span><span x-text="f.name"></span><button class="aq-icon-btn" @click="removeFood(f)" :aria-label="`${f.name} löschen`"><span x-icon="'trash'"></span></button></li>
+            </template>
+          </ul>
+          <form class="aq-add" @submit.prevent="addFood()">
+            <input class="aq-input" x-model="foodName" placeholder="z. B. Flocken, Granulat, Artemia" aria-label="Neues Futtermittel" enterkeyhint="done">
+            <button class="aq-btn aq-btn--primary" type="submit" :disabled="!foodName.trim()"><span x-icon="'plus'"></span>Anlegen</button>
+          </form>
+        </section>
+      </div>
+
+      <!-- ---------------------------------------------------------------- BESTAND -->
+      <div class="aq-section" x-show="section === 'stock'">
+        <form class="aq-card aq-stock-add" @submit.prevent="addStock()">
+          <h3>Neu im Becken</h3>
+          <div class="aq-add">
+            <input class="aq-input" x-model="stockForm.name" placeholder="Tier- oder Pflanzenart, z. B. Amanogarnele" aria-label="Art" enterkeyhint="done">
+            <span class="aq-stepper">
+              <button type="button" @click="stockForm.qty = Math.max(1, stockForm.qty - 1)" aria-label="Weniger"><span x-icon="'minus'"></span></button>
+              <b x-text="stockForm.qty"></b>
+              <button type="button" @click="stockForm.qty++" aria-label="Mehr"><span x-icon="'plus'"></span></button>
+            </span>
+          </div>
+          <button class="aq-btn aq-btn--primary aq-btn--wide" type="submit" :disabled="!stockForm.name.trim()"><span x-icon="'sparkles'"></span>Eintragen &amp; Steckbrief holen</button>
+        </form>
+
+        <p class="aq-stock-sum" x-show="tank.stock.length" x-text="`${stockCount('animals')} Tiere · ${stockCount('plants')} Pflanzen`"></p>
+        <ul class="aq-stock">
+          <template x-for="s in tank.stock" :key="s.id">
+            <li class="aq-specimen" :class="{ 'is-plant': ['Pflanze', 'Moos'].includes(s.profile?.kind) }">
+              <button class="aq-specimen-main" @click="openSpecies(s)">
+                <span class="aq-thumb">
+                  <img x-show="photo(s)" :src="photo(s)" alt="" loading="lazy">
+                  <span x-show="!photo(s)" x-icon="['Pflanze', 'Moos'].includes(s.profile?.kind) ? 'sprout' : s.profile?.kind === 'Garnele' ? 'shrimp' : s.profile?.kind === 'Schnecke' ? 'snail' : 'fish'"></span>
+                </span>
+                <span class="aq-specimen-text">
+                  <b x-text="s.profile?.commonName || s.name"></b>
+                  <i x-show="s.profile?.scientificName" x-text="s.profile?.scientificName"></i>
+                  <span class="aq-fine" x-show="profileBusy[s.id]"><span :class="{ spin: isBusy(s.id) }" x-icon="isBusy(s.id) ? 'spinner' : 'alert'" x-show="isBusy(s.id) || profileBusy[s.id]"></span> <span x-text="profileBusy[s.id]"></span></span>
+                  <span class="aq-warn-line" x-show="conflicts(s).length"><span x-icon="'warn'"></span>Passt nicht ganz zu den Zielwerten</span>
+                </span>
+              </button>
+              <span class="aq-stepper aq-stepper--small">
+                <button @click="stockQty(s, -1)" aria-label="Weniger"><span x-icon="'minus'"></span></button>
+                <b x-text="s.qty"></b>
+                <button @click="stockQty(s, 1)" aria-label="Mehr"><span x-icon="'plus'"></span></button>
+              </span>
+            </li>
+          </template>
+        </ul>
+        <div class="aq-empty" x-show="!tank.stock.length">
+          <svg class="aq-empty-fish" viewBox="0 0 60 30" aria-hidden="true"><ellipse cx="24" cy="15" rx="20" ry="10"/><path d="M42 15 58 4v22Z"/><circle cx="14" cy="12" r="2.2"/></svg>
+          <p>Trag ein, wer im Becken wohnt. Die KI legt zu jeder Art einen Steckbrief an.</p>
+        </div>
+      </div>
+    </div>
+
+    <button class="aq-fab" x-show="section === 'values' && !(selected && mode === 'chart')" x-transition.opacity @click="newMeasurement()"><span x-icon="'plus'"></span>Messung</button>
+
+    <template x-if="selected && section === 'values' && mode === 'chart'">
+      <div class="aq-pick" x-transition:enter="aq-pick-enter" x-transition:enter-start="aq-pick-from">
+        <header>
+          <b x-text="when(selected.at)"></b>
+          <span class="aq-tag" x-show="selected.phase" x-text="selected.phase === 'before' ? 'Vor Wasserwechsel' : 'Nach Wasserwechsel'"></span>
+          <button class="aq-icon-btn" @click="selectedId = null; refreshCharts()" aria-label="Schließen"><span x-icon="'x'"></span></button>
+        </header>
+        <div class="aq-pick-values">
+          <template x-for="p in PARAMS.filter((x) => selected.values[x.key] != null)" :key="p.key">
+            <span :class="`is-${paramState(p.key, selected.values[p.key])}`"><small x-text="p.label"></small><b x-text="fmtU(p.key, selected.values[p.key])"></b></span>
+          </template>
+          <span x-show="co2Calc(selected) != null"><small>CO₂ rechn.</small><b x-text="`≈ ${fmt('co2', co2Calc(selected))} mg/l`"></b></span>
+        </div>
+        <p class="aq-pick-note" x-show="selected.note" x-text="selected.note"></p>
+        <button class="aq-btn aq-btn--small" @click="editMeasurement(selected)"><span x-icon="'pencil'"></span>Bearbeiten</button>
+      </div>
+    </template>
+
+    <nav class="aq-nav" aria-label="Aquarium-Bereiche">
+      <button :aria-current="section === 'values' ? 'page' : null" @click="section = 'values'"><span x-icon="'chart'"></span>Werte</button>
+      <button :aria-current="section === 'care' ? 'page' : null" @click="section = 'care'"><span x-icon="'drops'"></span>Pflege</button>
+      <button :aria-current="section === 'stock' ? 'page' : null" @click="section = 'stock'"><span x-icon="'fish'"></span>Bestand</button>
+    </nav>
+  </div>
+
+  <!-- Messung erfassen -->
+  <div class="aq-scrim" x-show="isOpen('aqua-measure')" x-transition.opacity x-cloak @click.self="closeLayer('aqua-measure')">
+    <div class="aq-sheet" role="dialog" aria-modal="true" aria-labelledby="aq-m-title" x-show="isOpen('aqua-measure')" x-transition:enter="sheet-enter" x-transition:enter-start="aq-sheet-from" x-transition:leave="sheet-leave" x-transition:leave-end="aq-sheet-from">
+      <template x-if="form">
+        <form @submit.prevent="saveMeasurement()">
+          <header class="aq-sheet-head">
+            <h3 id="aq-m-title" x-text="form.id ? 'Messung bearbeiten' : `Messung · ${tank.name}`"></h3>
+            <button type="button" class="aq-icon-btn" @click="closeLayer('aqua-measure')" aria-label="Schließen"><span x-icon="'x'"></span></button>
+          </header>
+          <label class="aq-label">Zeitpunkt
+            <input type="datetime-local" class="aq-input" x-model="form.at" required>
+          </label>
+          <div class="aq-seg aq-seg--wide" role="radiogroup" aria-label="Wasserwechsel">
+            <button type="button" role="radio" :aria-checked="!form.phase" @click="form.phase = null">Normal</button>
+            <template x-for="ph in PHASES" :key="ph.key">
+              <button type="button" role="radio" :aria-checked="form.phase === ph.key" @click="form.phase = ph.key" x-text="ph.label"></button>
+            </template>
+          </div>
+          <div class="aq-values">
+            <template x-for="p in PARAMS" :key="p.key">
+              <label class="aq-value" :class="`is-${formState(p.key)}`">
+                <span class="aq-value-label"><b x-text="p.label"></b><small x-text="`Ziel ${fmtRange(p.key)}`"></small></span>
+                <span class="aq-value-input">
+                  <button type="button" @click="stepValue(p.key, -1)" :aria-label="`${p.label} verringern`"><span x-icon="'minus'"></span></button>
+                  <input type="text" inputmode="decimal" x-model="form.values[p.key]" :placeholder="latest[p.key] ? fmt(p.key, latest[p.key].v) : '–'" :aria-label="p.label" autocomplete="off">
+                  <button type="button" @click="stepValue(p.key, 1)" :aria-label="`${p.label} erhöhen`"><span x-icon="'plus'"></span></button>
+                </span>
+                <small class="aq-unit" x-text="p.unit"></small>
+              </label>
+            </template>
+          </div>
+          <label class="aq-label">Notiz
+            <textarea class="aq-input aq-textarea" x-model="form.note" rows="2" placeholder="z. B. Dünger umgestellt, Fische unruhig …"></textarea>
+          </label>
+          <div class="aq-sheet-actions">
+            <button type="button" class="aq-btn aq-btn--danger" x-show="form.id" @click="deleteMeasurement()"><span x-icon="'trash'"></span>Löschen</button>
+            <button type="submit" class="aq-btn aq-btn--primary" :disabled="!formValid"><span x-icon="'check'"></span>Speichern</button>
+          </div>
+          <p class="aq-fine">Leere Felder werden nicht gespeichert – einzelne Werte reichen.</p>
+        </form>
+      </template>
+    </div>
+  </div>
+
+  <!-- Zielwerte -->
+  <div class="aq-scrim" x-show="isOpen('aqua-targets')" x-transition.opacity x-cloak @click.self="closeLayer('aqua-targets')">
+    <div class="aq-sheet" role="dialog" aria-modal="true" aria-labelledby="aq-t-title" x-show="isOpen('aqua-targets')" x-transition:enter="sheet-enter" x-transition:enter-start="aq-sheet-from" x-transition:leave="sheet-leave" x-transition:leave-end="aq-sheet-from">
+      <template x-if="targetsForm">
+        <form @submit.prevent="saveTargets()">
+          <header class="aq-sheet-head">
+            <h3 id="aq-t-title" x-text="`Zielwerte · ${tank.name}`"></h3>
+            <button type="button" class="aq-icon-btn" @click="closeLayer('aqua-targets')" aria-label="Schließen"><span x-icon="'x'"></span></button>
+          </header>
+          <div class="aq-targets">
+            <template x-for="p in PARAMS" :key="p.key">
+              <div class="aq-target-row">
+                <span class="aq-value-label"><b x-text="p.label"></b><small x-text="p.unit || ' '"></small></span>
+                <input class="aq-input" type="text" inputmode="decimal" x-model="targetsForm[p.key].min" placeholder="min" :aria-label="`${p.label} Minimum`">
+                <span aria-hidden="true">–</span>
+                <input class="aq-input" type="text" inputmode="decimal" x-model="targetsForm[p.key].max" placeholder="max" :aria-label="`${p.label} Maximum`">
+                <button type="button" class="aq-icon-btn" @click="resetTargets(p.key)" :aria-label="`${p.label} auf Standard`"><span x-icon="'undo'"></span></button>
+              </div>
+            </template>
+          </div>
+          <p class="aq-fine">Leer lassen = kein Ziel. Die Zielbereiche erscheinen als Band in den Diagrammen und steuern die Hinweise.</p>
+          <div class="aq-sheet-actions"><button type="submit" class="aq-btn aq-btn--primary"><span x-icon="'check'"></span>Übernehmen</button></div>
+        </form>
+      </template>
+    </div>
+  </div>
+
+  <!-- Fütterung bearbeiten -->
+  <div class="aq-scrim" x-show="isOpen('aqua-feed')" x-transition.opacity x-cloak @click.self="closeLayer('aqua-feed')">
+    <div class="aq-sheet" role="dialog" aria-modal="true" aria-labelledby="aq-f-title" x-show="isOpen('aqua-feed')" x-transition:enter="sheet-enter" x-transition:enter-start="aq-sheet-from" x-transition:leave="sheet-leave" x-transition:leave-end="aq-sheet-from">
+      <template x-if="feedEdit">
+        <form @submit.prevent="aqSaveSlot()">
+          <header class="aq-sheet-head">
+            <h3 id="aq-f-title" x-text="`Fütterung · ${WEEKDAYS[feedEdit.day]}`"></h3>
+            <button type="button" class="aq-icon-btn" @click="closeLayer('aqua-feed')" aria-label="Schließen"><span x-icon="'x'"></span></button>
+          </header>
+          <label class="aq-label">Uhrzeit
+            <input type="time" class="aq-input aq-input--time" x-model="feedEdit.time" required>
+          </label>
+          <p class="aq-label">Futter</p>
+          <div class="aq-food-pick">
+            <template x-for="f in d.foods" :key="f.id">
+              <button type="button" class="aq-col" :aria-pressed="feedEdit.foods.includes(f.id)" @click="toggleFeedFood(f.id)" x-text="f.name"></button>
+            </template>
+            <span class="aq-fine" x-show="!d.foods.length">Noch keine Futtermittel – unter „Futtermittel" anlegen.</span>
+          </div>
+          <label class="aq-switch"><input type="checkbox" x-model="feedEdit.all"><span></span>Diesen Tag für alle Wochentage übernehmen</label>
+          <div class="aq-sheet-actions">
+            <button type="button" class="aq-btn aq-btn--danger" @click="removeSlot()"><span x-icon="'trash'"></span>Entfernen</button>
+            <button type="submit" class="aq-btn aq-btn--primary"><span x-icon="'check'"></span>Speichern</button>
+          </div>
+        </form>
+      </template>
+    </div>
+  </div>
+
+  <!-- Steckbrief -->
+  <div class="aq aq-species" role="dialog" aria-modal="true" aria-labelledby="aq-s-title" x-show="isOpen('aqua-species')" x-transition:enter="page-enter" x-transition:enter-start="page-from" x-transition:leave="page-leave" x-transition:leave-end="page-from" x-cloak>
+    <template x-if="species">
+      <div class="aq-species-inner">
+        <div class="aq-hero" :class="{ 'has-photo': photo(species) }">
+          <img x-show="photo(species)" :src="photo(species)" alt="">
+          <span class="aq-hero-icon" x-show="!photo(species)" x-icon="['Pflanze', 'Moos'].includes(species.profile?.kind) ? 'sprout' : species.profile?.kind === 'Garnele' ? 'shrimp' : species.profile?.kind === 'Schnecke' ? 'snail' : 'fish'"></span>
+          <button class="aq-round aq-hero-back" @click="closeLayer('aqua-species')" aria-label="Zurück"><span x-icon="'back'"></span></button>
+          <div class="aq-hero-photo">
+            <label class="aq-round" aria-label="Foto aufnehmen"><span x-icon="'camera'"></span><input type="file" accept="image/*" capture="environment" class="sr-only" @change="setPhoto(species, $event)"></label>
+            <label class="aq-round" aria-label="Bild aus der Galerie wählen"><span x-icon="'image'"></span><input type="file" accept="image/*" class="sr-only" @change="setPhoto(species, $event)"></label>
+          </div>
+        </div>
+        <div class="aq-species-body">
+          <h2 id="aq-s-title" class="aq-species-name" x-text="species.profile?.commonName || species.name"></h2>
+          <p class="aq-species-sci" x-show="species.profile?.scientificName" x-text="species.profile?.scientificName"></p>
+          <div class="aq-species-tags">
+            <span class="aq-tag" x-show="species.profile?.kind" x-text="species.profile?.kind"></span>
+            <span class="aq-tag" x-show="species.profile?.difficulty" x-text="`Pflege: ${species.profile?.difficulty}`"></span>
+            <span class="aq-stepper aq-stepper--small">
+              <button @click="stockQty(species, -1)" aria-label="Weniger"><span x-icon="'minus'"></span></button>
+              <b x-text="`${species.qty}×`"></b>
+              <button @click="stockQty(species, 1)" aria-label="Mehr"><span x-icon="'plus'"></span></button>
+            </span>
+          </div>
+
+          <template x-if="!species.profile">
+            <div class="aq-card aq-profile-wait">
+              <p><span :class="{ spin: isBusy(species.id) }" x-icon="isBusy(species.id) ? 'spinner' : 'info'"></span> <span x-text="profileBusy[species.id] || 'Noch kein Steckbrief.'"></span></p>
+              <button class="aq-btn aq-btn--primary" @click="fetchProfile(species.id)" :disabled="isBusy(species.id)"><span x-icon="'sparkles'"></span>Steckbrief erstellen</button>
+            </div>
+          </template>
+
+          <template x-if="species.profile">
+            <div class="aq-profile">
+              <p class="aq-profile-sum" x-text="species.profile.summary"></p>
+              <div class="aq-warn-box" x-show="conflicts(species).length">
+                <p><span x-icon="'warn'"></span><b>Passt nicht ganz zu den Zielwerten</b></p>
+                <ul><template x-for="c in conflicts(species)" :key="c"><li x-text="c"></li></template></ul>
+              </div>
+              <dl class="aq-facts">
+                <div x-show="species.profile.temp"><dt>Temperatur</dt><dd x-text="species.profile.temp ? `${fmt('temp', species.profile.temp.min)}–${fmt('temp', species.profile.temp.max)} °C` : ''"></dd></div>
+                <div x-show="species.profile.ph"><dt>pH</dt><dd x-text="species.profile.ph ? `${fmt('ph', species.profile.ph.min)}–${fmt('ph', species.profile.ph.max)}` : ''"></dd></div>
+                <div x-show="species.profile.gh"><dt>GH</dt><dd x-text="species.profile.gh ? `${fmt('gh', species.profile.gh.min)}–${fmt('gh', species.profile.gh.max)} °dH` : ''"></dd></div>
+                <div x-show="species.profile.kh"><dt>KH</dt><dd x-text="species.profile.kh ? `${fmt('kh', species.profile.kh.min)}–${fmt('kh', species.profile.kh.max)} °dH` : ''"></dd></div>
+                <div x-show="species.profile.size"><dt>Größe</dt><dd x-text="species.profile.size"></dd></div>
+                <div x-show="species.profile.lifespan && species.profile.lifespan !== '–'"><dt>Alter</dt><dd x-text="species.profile.lifespan"></dd></div>
+                <div x-show="species.profile.minLiters"><dt>Becken ab</dt><dd x-text="`${species.profile.minLiters} l`"></dd></div>
+                <div x-show="species.profile.group && species.profile.group !== '–'"><dt>Gruppe</dt><dd x-text="species.profile.group"></dd></div>
+              </dl>
+              <section class="aq-prose" x-show="species.profile.care.length">
+                <h3><span x-icon="'heart'"></span>So geht es ihr gut</h3>
+                <ul><template x-for="c in species.profile.care" :key="c"><li x-text="c"></li></template></ul>
+              </section>
+              <section class="aq-prose aq-prose--warn" x-show="species.profile.warning.length">
+                <h3><span x-icon="'warn'"></span>Warnzeichen</h3>
+                <ul><template x-for="c in species.profile.warning" :key="c"><li x-text="c"></li></template></ul>
+              </section>
+              <template x-for="[label, val] in [['Verhalten', species.profile.behavior], ['Vergesellschaftung', species.profile.compatibility], ['Ernährung', species.profile.diet], ['Licht', species.profile.light], ['CO₂', species.profile.co2], ['Einrichtung & Platz', species.profile.placement], ['Vermehrung', species.profile.breeding], ['Herkunft', species.profile.origin]].filter(([, v]) => v && v !== '–')" :key="label">
+                <section class="aq-prose"><h3 x-text="label"></h3><p x-text="val"></p></section>
+              </template>
+              <p class="aq-fine" x-text="`KI-Steckbrief vom ${when(species.profileAt, { time: false })} – im Zweifel gegenprüfen.`"></p>
+            </div>
+          </template>
+          <div class="aq-species-actions">
+            <button class="aq-btn" x-show="species.profile" @click="fetchProfile(species.id)" :disabled="isBusy(species.id)"><span :class="{ spin: isBusy(species.id) }" x-icon="isBusy(species.id) ? 'spinner' : 'refresh'"></span>Neu erstellen</button>
+            <button class="aq-btn aq-btn--danger" @click="removeStock(species)"><span x-icon="'trash'"></span>Entfernen</button>
+          </div>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <!-- Einstellungen des Aquarium-Helfers -->
+  <div class="aq aq-settings" role="dialog" aria-modal="true" aria-labelledby="aq-set-title" x-show="isOpen('aqua-settings')" x-transition:enter="page-enter" x-transition:enter-start="page-from" x-transition:leave="page-leave" x-transition:leave-end="page-from" x-cloak>
+    <header class="aq-bar">
+      <button class="aq-round" @click="closeLayer('aqua-settings')" aria-label="Zurück"><span x-icon="'back'"></span></button>
+      <h2 id="aq-set-title" class="aq-brand">Einstellungen</h2>
+      <span class="aq-round-spacer"></span>
+    </header>
+    <div class="aq-scroll aq-scroll--plain">
+      <template x-if="settingsForm">
+        <div class="aq-section">
+          <section class="aq-card">
+            <h3>Becken</h3>
+            <template x-for="t in d.tanks" :key="t.id">
+              <div class="aq-form-row aq-form-row--tank">
+                <input class="aq-input" x-model="settingsForm.names[t.id].name" @change="saveTankMeta(t.id)" :aria-label="`Name von ${t.name}`">
+                <input class="aq-input aq-input--num" type="number" min="0" inputmode="numeric" x-model="settingsForm.names[t.id].liters" @change="saveTankMeta(t.id)" placeholder="Liter" aria-label="Liter">
+                <span class="aq-fine">l</span>
+              </div>
+            </template>
+          </section>
+          <section class="aq-card">
+            <h3>Erinnerungen</h3>
+            <p class="aq-text" x-text="notifText"></p>
+            <button class="aq-btn aq-btn--primary" x-show="perm !== 'granted'" @click="enableNotifications()"><span x-icon="'bell'"></span>Benachrichtigungen erlauben</button>
+            <p class="aq-fine">Ohne eigenen Server kann eine Web-App Erinnerungen nicht fest vorbestellen: Solange die App offen ist oder im Hintergrund läuft, melden sie sich pünktlich; als installierte App prüft Chrome zusätzlich regelmäßig im Hintergrund. Spätestens beim Öffnen erscheint alles Fällige als Vollbild.</p>
+            <p class="aq-fine" x-show="periodic" x-text="periodic === 'granted' ? 'Hintergrund-Abgleich ist aktiv.' : periodic === 'unsupported' ? 'Hintergrund-Abgleich: in diesem Browser nicht verfügbar.' : 'Hintergrund-Abgleich: erst als installierte App verfügbar.'"></p>
+            <div class="aq-form-row">
+              <button class="aq-btn aq-btn--small" @click="testAlert(0)"><span x-icon="'bell'"></span>Vorschau</button>
+              <button class="aq-btn aq-btn--small" @click="testAlert(3)"><span x-icon="'bell-ring'"></span>Vorschau dringend</button>
+            </div>
+          </section>
+          <section class="aq-card">
+            <h3>Sicherung</h3>
+            <p class="aq-text">Der Aquarium-Helfer sichert getrennt vom Haushalt: Werte, Pläne, Bestand und Fotos in einer ZIP-Datei.</p>
+            <div class="aq-form-row">
+              <button class="aq-btn" @click="exportAqua()"><span x-icon="'download'"></span>Sichern</button>
+              <label class="aq-btn"><span x-icon="'upload'"></span>Einspielen<input type="file" accept=".zip,.json,application/zip,application/json" class="sr-only" @change="importAqua($event)"></label>
+            </div>
+          </section>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  <!-- Vollbild-Erinnerung -->
+  <div class="aq-alert" :class="alert && `is-l${alert.level} is-${alert.kind}`" role="alertdialog" aria-modal="true" aria-labelledby="aq-a-title" x-show="isOpen('aqua-alert')" x-transition:enter="aq-alert-enter" x-transition:enter-start="aq-alert-from" x-transition:leave="page-leave" x-transition:leave-end="page-from" x-cloak>
+    <template x-if="alert">
+      <div class="aq-alert-inner">
+        <span class="aq-alert-rings" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="aq-alert-icon" x-icon="alert.kind === 'feed' ? 'food' : alert.level >= 2 ? 'warn' : 'drops'"></span>
+        <h2 id="aq-a-title" class="aq-alert-title" x-text="alert.title"></h2>
+        <p class="aq-alert-body" x-text="alert.body"></p>
+        <p class="aq-alert-count" x-show="alert.kind === 'wc' && alert.snoozes" x-text="`${alert.snoozes}× verschoben`"></p>
+        <div class="aq-alert-actions">
+          <button class="aq-btn aq-btn--primary aq-btn--big" @click="alert.test ? closeLayer('aqua-alert') : answer(alert.key, 'done')"><span x-icon="'check'"></span>Erledigt</button>
+          <button class="aq-btn aq-btn--ghost" @click="alert.test ? closeLayer('aqua-alert') : answer(alert.key, 'snooze')" x-text="alert.kind === 'feed' ? 'In 1 h erneut erinnern' : 'Morgen wieder erinnern'"></button>
+          <button class="aq-link" @click="dismissAlert()">Später entscheiden</button>
+        </div>
+      </div>
+    </template>
+  </div>
+</div>
+
+<!-- ============================================================ DATEI-AUSSORTIERER (eigene Komponente `sorter`) -->
+<div class="so-root" x-data="sorter" @sorter-open.window="soOpen()">
+  <div class="so" role="dialog" aria-modal="true" aria-labelledby="so-title" x-show="isOpen('sorter')" x-transition:enter="page-enter" x-transition:enter-start="page-from" x-transition:leave="page-leave" x-transition:leave-end="page-from" x-cloak>
+    <header class="so-bar">
+      <button class="so-round" @click="soBack()" :aria-label="soView === 'swipe' ? 'Runde beenden' : 'Zurück'"><span x-icon="soView === 'swipe' ? 'x' : 'back'"></span></button>
+      <h2 id="so-title" class="so-brand">Aussortieren</h2>
+      <span class="so-level-chip" :title="soRank.title"><span x-icon="'crown'"></span><b x-text="soRank.level"></b></span>
+    </header>
+
+    <!-- ---------------------------------------------------------------- START -->
+    <div class="so-scroll" x-show="soView === 'home' || soView === 'empty'">
+      <section class="so-rank">
+        <div class="so-rank-head">
+          <span class="so-rank-badge"><span x-icon="'trophy'"></span></span>
+          <span class="so-rank-text"><small x-text="`Rang ${soRank.level}`"></small><b x-text="soRank.title"></b></span>
+          <span class="so-rank-xp"><b x-text="soStats.xp.toLocaleString('de-DE')"></b><small>Punkte</small></span>
+        </div>
+        <div class="so-xpbar" :style="`--p:${soRank.progress}`"><i></i></div>
+        <p class="so-fine" x-text="soRank.next ? `Noch ${(soRank.next.xp - soStats.xp).toLocaleString('de-DE')} Punkte bis „${soRank.next.title}“` : 'Höchster Rang erreicht. Respekt.'"></p>
+      </section>
+
+      <section class="so-panel">
+        <h3>Was soll durchsucht werden?</h3>
+        <div class="so-cats" role="group" aria-label="Kategorien">
+          <template x-for="c in SO_CATS" :key="c.key">
+            <button class="so-cat" :aria-pressed="!!soCats[c.key]" @click="soToggleCat(c.key)"><span x-icon="c.icon"></span><span x-text="c.label"></span></button>
+          </template>
+        </div>
+
+        <template x-if="!soReadonly">
+          <div>
+            <h3 class="so-sub">Ordner</h3>
+            <ul class="so-roots">
+              <template x-for="(r, i) in soRoots" :key="r.name + i">
+                <li><span x-icon="'folder'"></span><span x-text="r.name"></span><button class="so-icon-btn" @click="soRemoveRoot(i)" :aria-label="`${r.name} entfernen`"><span x-icon="'x'"></span></button></li>
+              </template>
+            </ul>
+            <button class="so-btn" @click="soAddRoot()"><span x-icon="'plus'"></span>Ordner hinzufügen</button>
+            <p class="so-fine">Am Handy z. B. DCIM, Pictures, Movies und Download einzeln hinzufügen. Die Ordner bleiben gemerkt.</p>
+          </div>
+        </template>
+        <template x-if="soReadonly">
+          <div class="so-readonly">
+            <p><span x-icon="'info'"></span>Dieser Browser erlaubt keinen Schreibzugriff auf Ordner. Du kannst trotzdem aussortieren – was du wegwischst, landet am Ende in einer Liste zum Löschen in der Dateien-App.</p>
+            <div class="so-row">
+              <label class="so-btn"><span x-icon="'folder'"></span>Ordner wählen<input type="file" webkitdirectory multiple class="sr-only" @change="soPickFiles($event)"></label>
+              <label class="so-btn"><span x-icon="'images'"></span>Dateien wählen<input type="file" multiple class="sr-only" @change="soPickFiles($event)"></label>
+            </div>
+          </div>
+        </template>
+        <p class="so-empty-note" x-show="soView === 'empty'">Keine Kandidaten gefunden – alles schon sortiert oder behalten. Einmal Behaltenes taucht nie wieder auf.</p>
+      </section>
+
+      <button class="so-start" x-show="!soReadonly" @click="soStart()"><span class="so-start-glow" aria-hidden="true"></span><span x-icon="'scan'"></span>Scan starten</button>
+
+      <section class="so-totals">
+        <div class="so-total so-total--big"><small>Freigeräumt</small><b x-text="soBytes(soStats.freed)"></b></div>
+        <div class="so-total"><small>Gelöscht</small><b x-text="soStats.deleted.toLocaleString('de-DE')"></b></div>
+        <div class="so-total"><small>Behalten</small><b x-text="soStats.kept.toLocaleString('de-DE')"></b></div>
+        <div class="so-total"><small>Runden</small><b x-text="soStats.sessions"></b></div>
+        <div class="so-total"><small>Beste Runde</small><b x-text="soBytes(soStats.bestSession)"></b></div>
+        <div class="so-total"><small>Beste Kombo</small><b x-text="`${soStats.bestCombo}×`"></b></div>
+        <div class="so-total so-total--wide" x-show="soStats.biggest"><small>Größter Brocken</small><b x-text="soStats.biggest ? `${soBytes(soStats.biggest.size)} · ${soStats.biggest.name}` : ''"></b></div>
+      </section>
+      <section class="so-catbars" x-show="soStats.freed">
+        <template x-for="c in soCategoryStats.filter((x) => x.bytes)" :key="c.key">
+          <div class="so-catbar"><span x-text="c.label"></span><i :style="`--p:${c.share}`"></i><b x-text="soBytes(c.bytes)"></b></div>
+        </template>
+      </section>
+    </div>
+
+    <!-- ---------------------------------------------------------------- SCAN -->
+    <div class="so-center" x-show="soView === 'scanning'">
+      <div class="so-radar" aria-hidden="true"><i></i><i></i><i></i><span class="so-radar-sweep"></span></div>
+      <p class="so-scan-big" x-text="soScan.found.toLocaleString('de-DE')"></p>
+      <p class="so-scan-label">Kandidaten gefunden</p>
+      <p class="so-fine" x-text="`${soScan.files.toLocaleString('de-DE')} Dateien geprüft · ${soBytes(soScan.bytes)}`"></p>
+      <p class="so-scan-dir" x-text="soScan.dir"></p>
+      <button class="so-btn" @click="soCancelScan()">Abbrechen</button>
+    </div>
+
+    <!-- ---------------------------------------------------------------- BEREIT -->
+    <div class="so-center" x-show="soView === 'ready'">
+      <p class="so-scan-big" x-text="soBytes(soDeckBytes)"></p>
+      <p class="so-scan-label" x-text="`in ${soDeck.length} Kandidaten – die wahrscheinlichsten zuerst`"></p>
+      <div class="so-ready-cats">
+        <template x-for="c in soDeckByCat" :key="c.key">
+          <span class="so-pill"><span x-icon="c.icon"></span><span x-text="`${c.n} ${c.label}`"></span></span>
+        </template>
+      </div>
+      <button class="so-start" @click="soBegin()"><span class="so-start-glow" aria-hidden="true"></span><span x-icon="'flame'"></span>Aussortieren starten</button>
+      <p class="so-fine">Links wischen = weg (20 Sekunden Gnadenfrist), rechts wischen = behalten (für immer).</p>
+    </div>
+
+    <!-- ---------------------------------------------------------------- WISCHEN -->
+    <div class="so-play" x-show="soView === 'swipe'">
+      <div class="so-hud" x-show="soSession">
+        <div class="so-hud-score"><small>Punkte</small><b x-text="(soSession?.xp || 0).toLocaleString('de-DE')"></b></div>
+        <div class="so-hud-combo" :class="{ 'is-hot': (soSession?.combo || 0) >= 5 }"><span x-icon="'zap'"></span><b x-text="`${soComboFactor.toLocaleString('de-DE')}×`"></b><small x-text="`Kombo ${soSession?.combo || 0}`"></small></div>
+        <div class="so-hud-freed"><small>Frei</small><b x-text="soBytes(soSession?.freed || 0)"></b></div>
+        <div class="so-progress" :style="`--p:${soDeck.length ? soIndex / soDeck.length : 0}`" :aria-label="`${soIndex} von ${soDeck.length}`"><i></i></div>
+      </div>
+
+      <div class="so-stage">
+        <template x-for="(u, i) in soUpcoming.slice().reverse()" :key="u.id">
+          <div class="so-card so-card--back" :class="`is-${soUpcoming.length - 1 - i}`" aria-hidden="true">
+            <div class="so-preview">
+              <template x-if="soPreviewOf(u)?.kind === 'image'"><img :src="soPreviewOf(u).url" alt=""></template>
+              <template x-if="soPreviewOf(u)?.kind === 'pdf'"><img :src="soPreviewOf(u).url" alt="" class="is-doc"></template>
+            </div>
+          </div>
+        </template>
+
+        <template x-for="card in soCard ? [soCard] : []" :key="card.id">
+          <div class="so-card so-card--top"
+               :class="{ 'is-flying-left': soFlying?.dir === -1, 'is-flying-right': soFlying?.dir === 1, 'is-dragging': soDrag, 'is-returning': soReturning }"
+               :style="soCardStyle + (soFlying ? `--fx:${soFlying.x}px;--fy:${soFlying.y * 0.35}px;` : '')"
+               @pointerdown="soDragStart($event)" @pointermove="soDragMove($event)" @pointerup="soDragEnd()" @pointercancel="soDragEnd()">
+            <span class="so-stamp so-stamp--del" :style="`opacity:${Math.max(0, -soLean)}`">Weg</span>
+            <span class="so-stamp so-stamp--keep" :style="`opacity:${Math.max(0, soLean)}`">Behalten</span>
+            <div class="so-preview">
+              <template x-if="!soPreviewOf(soCard)"><span class="so-loading" x-icon="'spinner'"></span></template>
+              <template x-if="soPreviewOf(soCard)?.kind === 'image'"><img :src="soPreviewOf(soCard).url" alt="" draggable="false"></template>
+              <template x-if="soPreviewOf(soCard)?.kind === 'pdf'"><img :src="soPreviewOf(soCard).url" alt="" class="is-doc" draggable="false"></template>
+              <template x-if="soPreviewOf(soCard)?.kind === 'video'"><video :src="soPreviewOf(soCard).url" muted autoplay loop playsinline preload="metadata"></video></template>
+              <template x-if="soPreviewOf(soCard)?.kind === 'text'"><pre class="so-text" x-text="soPreviewOf(soCard).text"></pre></template>
+              <template x-if="soPreviewOf(soCard)?.kind === 'icon'">
+                <span class="so-fileicon"><span x-icon="soCard.category === 'apps' ? 'zip' : soCard.kind === 'video' ? 'file-video' : soCard.kind === 'image' ? 'file-image' : 'file-text'"></span><b x-text="soCard.name.split('.').pop().toUpperCase()"></b></span>
+              </template>
+            </div>
+            <div class="so-info">
+              <div class="so-reasons">
+                <template x-for="r in soCard.reasons" :key="r"><span class="so-reason" x-text="r"></span></template>
+              </div>
+              <h3 class="so-name" x-text="soCard.name"></h3>
+              <p class="so-meta"><b x-text="soBytes(soCard.size)"></b><span x-text="soDate(soCard.modified)"></span><span x-text="soCatLabel(soCard.category)"></span></p>
+              <p class="so-path" x-text="soCard.path || '–'"></p>
+            </div>
+          </div>
+        </template>
+
+        <template x-for="f in soFloat" :key="f.id">
+          <span class="so-float" :class="`is-${f.kind}`" x-text="f.text" aria-hidden="true"></span>
+        </template>
+      </div>
+
+    <!-- Gnadenfrist: zuletzt weggewischte Datei -->
+      <template x-if="soLastPending">
+        <div class="so-pending" role="status" x-transition:enter="so-pending-enter" x-transition:enter-start="so-pending-from">
+          <span class="so-ring" :style="`--p:${soLeft(soLastPending) / 20}`"><b x-text="soLeft(soLastPending)"></b></span>
+          <span class="so-pending-text"><b x-text="soLastPending.name"></b><small x-text="soPending.length > 1 ? `${soPending.length} Dateien warten aufs Löschen` : `wird in ${soLeft(soLastPending)} s gelöscht`"></small></span>
+          <button class="so-btn so-btn--small" @click="soUndoPending(soLastPending.id)"><span x-icon="'undo'"></span>Rückgängig</button>
+        </div>
+      </template>
+
+      <div class="so-actions">
+        <button class="so-act so-act--del" @click="soDecide('delete')" :disabled="!soCard" aria-label="Weg damit"><span x-icon="'x'"></span></button>
+        <button class="so-act so-act--undo" @click="soUndo()" :disabled="!soCanUndo" aria-label="Letzte Entscheidung zurücknehmen"><span x-icon="'undo'"></span></button>
+        <button class="so-act so-act--keep" @click="soDecide('keep')" :disabled="!soCard" aria-label="Behalten"><span x-icon="'heart'"></span></button>
+      </div>
+    </div>
+
+    <!-- ---------------------------------------------------------------- FERTIG -->
+    <div class="so-center so-done" x-show="soView === 'done'">
+      <span class="so-burst" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+      <p class="so-scan-label">Runde geschafft</p>
+      <p class="so-scan-big" x-text="soBytes(soSession?.freed || 0)"></p>
+      <p class="so-scan-label">freigeräumt</p>
+      <div class="so-done-grid">
+        <div><b x-text="soSession?.deleted || 0"></b><small>weg</small></div>
+        <div><b x-text="soSession?.kept || 0"></b><small>behalten</small></div>
+        <div><b x-text="(soSession?.xp || 0).toLocaleString('de-DE')"></b><small>Punkte</small></div>
+        <div><b x-text="`${soSession?.bestCombo || 0}×`"></b><small>Kombo</small></div>
+      </div>
+      <template x-if="soMarked.length">
+        <div class="so-marked">
+          <p>Zum Löschen vorgemerkt (in der Dateien-App löschen):</p>
+          <pre x-text="soMarkedText()"></pre>
+          <button class="so-btn so-btn--small" @click="soCopyMarked()"><span x-icon="'copy'"></span>Liste kopieren</button>
+        </div>
+      </template>
+      <div class="so-row">
+        <button class="so-btn" x-show="soIndex < soDeck.length" @click="soView = 'swipe'; soShow()"><span x-icon="'flame'"></span>Weiter wischen</button>
+        <button class="so-btn" @click="soView = 'home'"><span x-icon="'trophy'"></span>Zur Übersicht</button>
+      </div>
+    </div>
+
+    <div class="so-levelup" x-show="soLevelUp" x-transition.opacity aria-live="polite">
+      <template x-if="soLevelUp">
+        <div><span x-icon="'crown'"></span><small>Neuer Rang</small><b x-text="soLevelUp.title"></b></div>
+      </template>
+    </div>
   </div>
 </div>
 

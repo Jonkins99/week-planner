@@ -31,6 +31,8 @@ import {
 import {
   CLASSIFY_SYSTEM, CLASSIFY_SCHEMA, classifyPrompt, readClassification, voiceSystem, voiceSchema, readVoice, shopModels,
 } from './shopping-ai.mjs';
+import { registerAqua } from './tools/aqua-app.mjs';
+import { registerSorter } from './tools/sorter-app.mjs';
 import { loadData, saveData, flushData, readJson, writeJson, UI_KEY, GEMINI_KEY, QUOTA_KEY } from './storage.mjs';
 
 const TABS = [
@@ -433,6 +435,7 @@ Alpine.data('app', () => ({
       if (name === 'kitchen') this.releaseWakeLock();
       if (name === 'wrapped') this.wrappedClosed();
       if (name === 'hp') this.hp.scrub = null;
+      window.dispatchEvent(new CustomEvent('wp-layer-closed', { detail: name }));
     }
   },
 
@@ -2443,6 +2446,14 @@ Alpine.data('app', () => ({
     }
     if (!this.hp.loaded) this.hp.current = this.hp.pos.time;
     this.openLayer('hp');
+    // Titel gleich bereitlegen (ohne abzuspielen): erst mit bekannter Dauer lässt sich spulen.
+    // Der Klick auf die Kachel ist die Nutzergeste, die ein gemerkter Dateigriff ggf. braucht.
+    this.hpPrepare();
+  },
+
+  async hpPrepare() {
+    if (this.hp.loaded || !this.hpCounts[this.hp.pos.book]) return;
+    await this.hpLoad(this.hp.pos, false);
   },
 
   hpEnsureAudio() {
@@ -2580,14 +2591,14 @@ Alpine.data('app', () => ({
 
   async hpSelectBook(no) {
     if (no === this.hp.pos.book) return;
-    if (!this.hpCounts[no]) { this.notify(`Für Band ${BOOKS[no - 1].roman} sind noch keine Dateien hinterlegt (Einstellungen).`); return; }
+    if (!this.hpCounts[no]) { this.notify(`Für Band ${BOOKS[no - 1].roman} sind noch keine Dateien im Bücherregal.`); return; }
     this.hpSave();
     const st = this.hpState();
     const p = st.positions?.[no] || { track: 0, time: 0 };
     const target = { book: no, track: Math.min(p.track || 0, this.hpCounts[no] - 1), time: p.time || 0 };
     this._hpCont = null;
-    if (this.hp.loaded) await this.hpLoad(target, this.hp.playing);
-    else { this.hp.pos = target; this.hp.current = target.time; this.hp.duration = st.durations?.[no]?.[target.track] || 0; this.hpSave(); }
+    this.hp.duration = st.durations?.[no]?.[target.track] || 0;
+    await this.hpLoad(target, this.hp.playing);
   },
 
   hpSetSleep(min) {
@@ -2609,14 +2620,19 @@ Alpine.data('app', () => ({
   },
 
   // Spulen: waagerecht ziehen; je höher der Daumen über den Regler wandert, desto feiner.
-  hpScrubStart(ev) {
+  async hpScrubStart(ev) {
+    const el = ev.currentTarget;
+    const { clientX, clientY, pointerId } = ev;
+    this._hpUp = false;
+    if (!this.hpDuration) await this.hpPrepare();
     const d = this.hpDuration;
     if (!d) return;
-    const el = ev.currentTarget;
-    el.setPointerCapture?.(ev.pointerId);
+    try { el.setPointerCapture?.(pointerId); } catch { /* Finger schon weg */ }
     const r = el.getBoundingClientRect();
-    const time = ((ev.clientX - r.left) / r.width) * d;
-    this.hp.scrub = { x: ev.clientX, y: ev.clientY, startY: ev.clientY, width: r.width, time: Math.max(0, Math.min(d, time)), moved: false, ...scrubFactor(0) };
+    const time = ((clientX - r.left) / r.width) * d;
+    this.hp.scrub = { x: clientX, y: clientY, startY: clientY, width: r.width, time: Math.max(0, Math.min(d - 0.5, time)), moved: false, ...scrubFactor(0) };
+    // Kurzes Antippen, während der Titel noch geladen wurde: direkt dorthin springen.
+    if (this._hpUp) this.hpScrubEnd();
   },
 
   hpScrubMove(ev) {
@@ -2635,7 +2651,7 @@ Alpine.data('app', () => ({
 
   async hpScrubEnd() {
     const s = this.hp.scrub;
-    if (!s) return;
+    if (!s) { this._hpUp = true; return; }
     this.hp.scrub = null;
     this._hpCont = this.hp.playing ? { start: Date.now() } : null;
     this.hp.current = s.time;
@@ -2720,6 +2736,10 @@ Alpine.data('app', () => ({
     return `${d}.${m}.${y}`;
   },
 }));
+
+// Werkzeuge: eigene Komponenten, nur über Ebenen und Meldungen mit der App verbunden.
+registerAqua(Alpine);
+registerSorter(Alpine);
 
 window.Alpine = Alpine;
 Alpine.start();

@@ -21,6 +21,12 @@ import { setRecurring, applyRecurring, nextWeekday } from '../resources/js/shopp
 import { belowMin, placeForProduct, sanitizePantry } from '../resources/js/pantry.mjs';
 import { eveningKey, markDue, advance, seekAcross, scrubFactor, sortTracks } from '../resources/js/hp.mjs';
 import { NUTRI_SCHEMA, readNutrition, periodDishes } from '../resources/js/nutrition-ai.mjs';
+import {
+  sanitizeAqua, emptyAqua, waterChangeMarks, nextWaterChange, dueReminders, answerReminder, escalation, deriveIssues,
+  co2FromPhKh, feedingsOn, atTime, isoDay, speciesConflicts, readValues, trendPerDay,
+} from '../resources/js/tools/aqua.mjs';
+import { readProfile, readAdvice, PROFILE_SCHEMA } from '../resources/js/tools/aqua-ai.mjs';
+import { categorize, scoreFile, rankCandidates, keepKey, rankOf, pointsFor, findDupes, skipDir } from '../resources/js/tools/sorter.mjs';
 
 let failed = 0;
 const pending = [];
@@ -377,6 +383,120 @@ test('Nährwerte: Gerichte je Mahlzeit, Antwort säubern', () => {
   assert.equal(n.meals[0].kcal, 650);
   assert.equal(n.meals[0].label, 'Abendessen');
   assert.equal(n.overall.kcal, 500);
+});
+
+test('Aquarium: Stand säubern, Werte lesen, Feste Becken', () => {
+  const s = sanitizeAqua({ tanks: [{ id: 'cube', name: 'Mini', liters: '30' }, { id: 'fremd' }], measurements: [{ tank: 'cube', at: 5, values: { ph: '6,8', no3: '', x: 3 } }, { tank: 'weg', at: 1, values: { ph: 7 } }] });
+  assert.equal(s.tanks.length, 2);
+  assert.equal(s.tanks[1].name, 'Mini');
+  assert.equal(s.tanks[1].liters, 30);
+  assert.equal(s.measurements.length, 1);
+  assert.deepEqual(s.measurements[0].values, { ph: 6.8 });
+  assert.deepEqual(readValues({ ph: '7,2', kh: '', gh: 'abc', temp: '25' }), { ph: 7.2, temp: 25 });
+  assert.equal(co2FromPhKh(7, 4), 12);
+});
+
+test('Aquarium: Wasserwechsel-Marke zwischen Vor- und Nach-Messung', () => {
+  const H = 3600000;
+  const list = [
+    { id: 'a', at: 10 * H, phase: 'before', values: {} },
+    { id: 'b', at: 12 * H, phase: 'after', values: {} },
+    { id: 'c', at: 100 * H, phase: 'before', values: {} },
+    { id: 'd', at: 200 * H, phase: 'after', values: {} },
+  ];
+  const marks = waterChangeMarks(list, [{ at: 11 * H }, { at: 300 * H }]);
+  assert.equal(marks.length, 2);
+  assert.equal(marks[0].at, 11 * H);
+  assert.equal(marks[0].derived, true);
+  assert.equal(marks[1].derived, false);
+});
+
+test('Aquarium: Erinnerungen, Aufschieben, Eskalation', () => {
+  const now = atTime('2026-10-09', '19:00');
+  let s = emptyAqua();
+  s.waterChanges.push({ id: 'w', tank: 't54', at: atTime('2026-10-02', '10:00'), source: 'manual' });
+  assert.equal(nextWaterChange(s, 't54'), atTime('2026-10-09', '18:00'));
+  let due = dueReminders(s, now);
+  assert.equal(due.length, 1);
+  assert.equal(due[0].kind, 'wc');
+  s = answerReminder(s, due[0].key, 'snooze', now);
+  assert.equal(dueReminders(s, now).length, 0);
+  assert.equal(dueReminders(s, atTime('2026-10-10', '18:01')).length, 1);
+  s = answerReminder(s, due[0].key, 'snooze', atTime('2026-10-10', '18:05'));
+  const d2 = dueReminders(s, atTime('2026-10-11', '18:30'))[0];
+  assert.equal(d2.snoozes, 2);
+  assert.equal(d2.level, escalation(2));
+  assert.ok(d2.level >= 1);
+  s = answerReminder(s, d2.key, 'done', atTime('2026-10-11', '18:30'));
+  assert.equal(dueReminders(s, atTime('2026-10-11', '18:31')).length, 0);
+  assert.equal(nextWaterChange(s, 't54'), atTime('2026-10-18', '18:00'));
+  assert.equal(escalation(0), 0);
+  assert.equal(escalation(1), 0);
+});
+
+test('Aquarium: Futterplan und Fütterungs-Erinnerung', () => {
+  let s = emptyAqua();
+  s.foods.push({ id: 'f', name: 'Flocken' });
+  const wd = (new Date(atTime('2026-10-09', '12:00')).getDay() + 6) % 7;
+  s.tanks[0].feed[wd] = [{ id: 'x', time: '08:00', foods: ['f'] }, { id: 'y', time: '20:00', foods: [] }];
+  const evs = feedingsOn(s, 't54', '2026-10-09');
+  assert.equal(evs.length, 1);
+  const due = dueReminders(s, atTime('2026-10-09', '08:10')).filter((r) => r.kind === 'feed');
+  assert.equal(due.length, 1);
+  s = answerReminder(s, due[0].key, 'snooze', atTime('2026-10-09', '08:10'));
+  assert.equal(dueReminders(s, atTime('2026-10-09', '08:40')).filter((r) => r.kind === 'feed').length, 0);
+  assert.equal(dueReminders(s, atTime('2026-10-09', '09:11')).filter((r) => r.kind === 'feed').length, 1);
+  assert.equal(dueReminders(s, atTime('2026-10-09', '15:00')).filter((r) => r.kind === 'feed').length, 0);
+});
+
+test('Aquarium: Schieflagen und Trend', () => {
+  const s = emptyAqua();
+  const D = 86400000;
+  const now = Date.now();
+  s.measurements = [0, 1, 2, 3].map((i) => ({ id: `m${i}`, tank: 't54', at: now - (3 - i) * D, values: { no3: 14 + i * 3, ph: 7 }, phase: null, note: '' }));
+  const issues = deriveIssues(s, 't54', now);
+  assert.ok(issues.some((i) => i.id === 'trend:no3'));
+  s.measurements.push({ id: 'z', tank: 't54', at: now, values: { no3: 60 }, phase: null, note: '' });
+  const again = deriveIssues(s, 't54', now);
+  assert.equal(again.find((i) => i.id === 'range:no3').level, 3);
+  assert.ok(trendPerDay([{ at: 0, v: 1 }, { at: D, v: 3 }]) > 1.9);
+  assert.deepEqual(speciesConflicts({ temp: { min: 18, max: 22 } }, { temp: { min: 24, max: 27 } }).length, 1);
+});
+
+test('Aquarium: KI-Antworten lesen', () => {
+  const p = readProfile({ kind: 'Garnele', commonName: 'Amanogarnele', scientificName: 'Caridina multidentata', summary: 'x', difficulty: 'leicht', temp: { min: 26, max: 20 }, ph: {}, care: ['a', ''], warning: ['b'] });
+  assert.equal(p.temp.min, 20);
+  assert.equal(p.ph, null);
+  assert.deepEqual(p.care, ['a']);
+  assert.equal(readProfile({}), null);
+  assert.ok(PROFILE_SCHEMA.properties.kind.enum.every((v) => v));
+  assert.equal(readAdvice({ summary: 'Gut', actions: [{ title: 'A', detail: 'B', urgency: 'egal' }] }).actions[0].urgency, 'bald');
+});
+
+test('Aussortierer: Kategorien, Bewertung, Behaltenes nie wieder', () => {
+  assert.equal(categorize('Screenshot_2024.png', 'DCIM/Screenshots'), 'screenshots');
+  assert.equal(categorize('IMG_1.jpg', 'DCIM/Camera'), 'photos');
+  assert.equal(categorize('film.mp4', 'Movies'), 'videos');
+  assert.equal(categorize('rechnung.pdf', 'Download'), 'documents');
+  assert.equal(categorize('app.apk', 'Download'), 'apps');
+  assert.equal(categorize('lied.mp3', 'Music'), null);
+  assert.ok(skipDir('.thumbnails') && skipDir('data', 'Android'));
+  const now = Date.now();
+  const D = 86400000;
+  const big = { id: 'a', name: 'Screenshot_1.png', path: 'Pictures/Screenshots', size: 40 * 1048576, modified: now - 800 * D, category: 'screenshots' };
+  const photo = { id: 'b', name: 'IMG_2.jpg', path: 'DCIM/Camera', size: 3 * 1048576, modified: now - 10 * D, category: 'photos' };
+  assert.ok(scoreFile(big, now).score > scoreFile(photo, now).score);
+  assert.ok(scoreFile({ ...photo, size: 300 * 1048576 }, now).score > scoreFile(photo, now).score);
+  assert.ok(scoreFile({ ...photo, modified: now - 1500 * D }, now).score > scoreFile(photo, now).score);
+  const ranked = rankCandidates([photo, big], {}, now);
+  assert.equal(ranked[0].id, 'a');
+  const kept = { [keepKey(big)]: now - 3000 * D };
+  assert.equal(rankCandidates([photo, { ...big, modified: now }], kept, now).length, 1);
+  const dupes = findDupes([{ id: 'x', name: 'a.jpg', size: 50000, modified: 1 }, { id: 'y', name: 'b.jpg', size: 50000, modified: 2 }]);
+  assert.ok(dupes.has('y') && !dupes.has('x'));
+  assert.equal(rankOf(0).level, 1);
+  assert.ok(rankOf(5000).level > 2);
+  assert.ok(pointsFor('delete', 100 * 1048576, 12) > pointsFor('delete', 100 * 1048576, 1));
 });
 
 await Promise.all(pending);

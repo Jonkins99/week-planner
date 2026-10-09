@@ -8,6 +8,9 @@ import {
   ToyBrick, Lock, CloudUpload, FileArchive, Users, User, Share,
   Menu, ChefHat, ChartColumn, Bike, Lightbulb, Recycle, Repeat, CalendarClock, PackagePlus, TrendingUp, TrendingDown,
   Equal, Headphones, Play as PlayIcon, Pause, RotateCcw, RotateCw, Timer, Euro, Gift, FolderOpen, Library, Receipt, Image,
+  Fish, Droplet, Droplets, Leaf, Camera, Bell, BellRing, BellOff, Thermometer, ZoomIn, ZoomOut, ChartSpline, List, Waves, Sprout,
+  TriangleAlert, Clock, RefreshCw, FileImage, FileVideo, FileText, Smartphone, Heart, Flame, Trophy, Zap, ScanSearch, HardDrive,
+  Target, Shrimp, Snail, Images, Crown, CircleCheck, Cookie,
 } from 'lucide';
 
 const ICONS = {
@@ -26,6 +29,11 @@ const ICONS = {
   'available': CalendarClock, 'to-pantry': PackagePlus, 'trend-up': TrendingUp, 'trend-down': TrendingDown, equal: Equal,
   headphones: Headphones, 'play-solid': PlayIcon, pause: Pause, 'rewind': RotateCcw, 'forward': RotateCw, timer: Timer,
   euro: Euro, gift: Gift, folder: FolderOpen, library: Library, receipt: Receipt, image: Image, tools: Plus,
+  fish: Fish, drop: Droplet, drops: Droplets, leaf: Leaf, camera: Camera, bell: Bell, 'bell-ring': BellRing, 'bell-off': BellOff,
+  thermo: Thermometer, 'zoom-in': ZoomIn, 'zoom-out': ZoomOut, chart: ChartSpline, list: List, waves: Waves, sprout: Sprout,
+  warn: TriangleAlert, clock: Clock, refresh: RefreshCw, 'file-image': FileImage, 'file-video': FileVideo, 'file-text': FileText,
+  phone: Smartphone, heart: Heart, flame: Flame, trophy: Trophy, zap: Zap, scan: ScanSearch, drive: HardDrive, target: Target,
+  shrimp: Shrimp, snail: Snail, images: Images, crown: Crown, 'check-circle': CircleCheck, food: Cookie,
 };
 
 const attrs = (o) => Object.entries(o).map(([k, v]) => `${k}="${String(v).replace(/"/g, '&quot;')}"`).join(' ');
