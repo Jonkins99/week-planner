@@ -7,7 +7,7 @@ import {
   PARAMS, PARAM, PHASES, MAX_FEED_SLOTS, DAY_MS, uid, sanitizeAqua, emptyAqua, readValues, measurementsOf, seriesOf,
   latestValues, co2FromPhKh, rangeState, fmtValue, fmtWithUnit, fmtRange, waterChangeMarks, nextWaterChange,
   lastWaterChange, waterChangeHistory, dueReminders, nextReminderAt, upcomingReminders, answerReminder, feedingsOn,
-  addFeedSlot, copyFeedDay, deriveIssues, speciesConflicts, isoDay, weekdayOf,
+  addFeedSlot, copyFeedDay, deriveIssues, speciesConflicts, isoDay, weekdayOf, escalation,
 } from './aqua.mjs';
 import {
   PROFILE_SYSTEM, PROFILE_SCHEMA, profilePrompt, readProfile, profileModels,
@@ -17,6 +17,7 @@ import { TimeChart, clampView } from './chart.mjs';
 import { idbGet, idbSet, idbDel } from './idb.mjs';
 import {
   notifSupported, notifPermission, askPermission, showNotification, writeSchedule, registerPeriodic, takeAnswers, onWorkerMessage,
+  pushSupported, pushConfig, enablePush, refreshPush, disablePush, syncWakeTimes, testWake,
 } from './notify.mjs';
 import { generateJson, QuotaBook, normalizeKeys } from '../gemini.mjs';
 import { readJson, writeJson, GEMINI_KEY, QUOTA_KEY } from '../storage.mjs';
@@ -80,6 +81,13 @@ export function registerAqua(Alpine) {
     photoTick: 0,
     view: null,
     settingsForm: null,
+    push: { url: '', on: false, busy: false, status: '' },
+    // Interne Zeitgeber: hier deklariert, damit sie nicht im Zustand der App landen.
+    _saveT: 0,
+    _remT: 0,
+    _planT: 0,
+    _viewRaf: 0,
+    _ticked: false,
 
     init() {
       this.d = sanitizeAqua(readJson(KEY, null));
@@ -102,7 +110,8 @@ export function registerAqua(Alpine) {
       this.$watch('mode', () => this.$nextTick(() => this.refreshCharts(true)));
       this.$watch('section', () => this.$nextTick(() => this.refreshCharts(true)));
       this.resetView(false);
-      this.reschedule();
+      pushConfig().then((cfg) => { if (cfg) this.push = { ...this.push, url: cfg.url, on: true }; });
+      refreshPush().catch(() => {});
       // Steckbriefe, die mangels Schlüssel oder Netz liegen geblieben sind, nachholen.
       setTimeout(() => {
         if (!geminiKeys().length) return;
@@ -689,8 +698,20 @@ export function registerAqua(Alpine) {
           actions: [{ action: 'done', title: 'Erledigt' }, { action: 'snooze', title: 'In 1 h erneut erinnern' }],
         };
       }
-      const n = ev.snoozes || 0;
-      const over = Math.max(0, Math.floor((Date.now() - (nextWaterChange(this.d, ev.tank) || Date.now())) / DAY_MS));
+      const texts = (n, over) => this.wcTexts(t, name, n, over);
+      const over0 = Math.max(0, Math.floor((Date.now() - (nextWaterChange(this.d, ev.tank) || Date.now())) / DAY_MS));
+      const cur = texts(ev.snoozes || 0, over0);
+      return {
+        key: ev.key, at: ev.at, kind: 'wc', level: ev.level, snoozes: ev.snoozes || 0,
+        title: cur.title, body: cur.body,
+        actions: [{ action: 'done', title: 'Erledigt' }, { action: 'snooze', title: 'Morgen wieder erinnern' }],
+        // Für das Aufschieben bei geschlossener App: Texte je Anzahl der Verschiebungen.
+        variants: Array.from({ length: 8 }, (_, n) => texts(n, over0 + Math.max(0, n - (ev.snoozes || 0)))),
+      };
+    },
+
+    wcTexts(t, name, n, over) {
+      const level = escalation(n);
       const titles = [
         `Wasserwechsel · ${name}`,
         `Wasserwechsel · ${name} – schon ${n}× verschoben`,
@@ -703,22 +724,26 @@ export function registerAqua(Alpine) {
         `${n}× verschoben, ${over} ${over === 1 ? 'Tag' : 'Tage'} drüber. Nitrat und Schadstoffe sammeln sich – bitte heute wechseln.`,
         `${n}× verschoben! Die Bewohner brauchen frisches Wasser. Jetzt 10 Minuten – danach ist Ruhe.`,
       ];
-      return {
-        key: ev.key, at: ev.at, kind: 'wc', level: ev.level,
-        title: titles[ev.level], body: bodies[ev.level],
-        actions: [{ action: 'done', title: 'Erledigt' }, { action: 'snooze', title: 'Morgen wieder erinnern' }],
-      };
+      return { title: titles[level], body: bodies[level], level };
     },
 
     reschedule() {
       clearTimeout(this._remT);
       const next = nextReminderAt(this.d);
       if (next != null) this._remT = setTimeout(() => this.tick(), Math.min(2 ** 31 - 1, Math.max(1000, next - Date.now() + 500)));
-      writeSchedule(upcomingReminders(this.d).map((ev) => this.payloadOf(ev)));
+      // Erst nach dem ersten Takt: vorher könnten noch Antworten aus Benachrichtigungen fehlen.
+      if (!this._ticked) return;
+      clearTimeout(this._planT);
+      this._planT = setTimeout(() => {
+        const plan = upcomingReminders(this.d, Date.now(), 14).map((ev) => this.payloadOf(ev));
+        writeSchedule(plan);
+        syncWakeTimes(plan.map((p) => p.at));
+      }, 400);
     },
 
     async tick() {
       for (const a of await takeAnswers()) this.answer(a.key, a.action, { fromNotification: true, at: a.at });
+      this._ticked = true;
       const due = dueReminders(this.d);
       const shown = readJson(SHOWN, {}) || {};
       const visible = document.visibilityState === 'visible';
@@ -820,6 +845,45 @@ export function registerAqua(Alpine) {
       t.name = f.name.trim() || t.name;
       t.liters = Math.max(0, Math.round(Number(f.liters) || 0));
       this.save();
+    },
+
+    get pushAvailable() {
+      return pushSupported();
+    },
+
+    async setupPush() {
+      this.push.busy = true;
+      this.push.status = 'Wird eingerichtet …';
+      try {
+        await enablePush(this.push.url);
+        this.perm = notifPermission();
+        this.push.on = true;
+        this._ticked = true;
+        localStorage.removeItem('wp-push-times-v1');
+        this.reschedule();
+        this.push.status = 'Weckdienst ist aktiv. Erinnerungen kommen jetzt auch bei geschlossener App.';
+      } catch (e) {
+        this.push.status = e?.message || 'Einrichten ist gescheitert.';
+      } finally {
+        this.push.busy = false;
+      }
+    },
+
+    async probePush() {
+      this.push.busy = true;
+      try {
+        await testWake(60000);
+        this.push.status = 'Probe läuft: App jetzt schließen und Handy sperren – innerhalb von ca. 1–2 Minuten sollte „Weckdienst funktioniert" erscheinen.';
+      } catch (e) {
+        this.push.status = e?.message || 'Probe gescheitert.';
+      } finally {
+        this.push.busy = false;
+      }
+    },
+
+    async stopPush() {
+      await disablePush();
+      this.push = { ...this.push, on: false, status: 'Weckdienst abgemeldet.' };
     },
 
     get notifText() {

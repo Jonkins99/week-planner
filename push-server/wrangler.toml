@@ -1,0 +1,17 @@
+name = "week-planner-push"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+
+# Jede Minute fällige Weckzeiten verschicken
+[triggers]
+crons = ["* * * * *"]
+
+# id trägt `node setup.mjs` selbst ein
+[[kv_namespaces]]
+binding = "PUSH"
+id = "b3c29cb4cb32486a8352fe39867dfaa3"
+
+[vars]
+# Öffentlicher VAPID-Schlüssel (trägt `node setup.mjs` selbst ein)
+VAPID_PUBLIC = "BJRi3XuKQYE7kYZBm3oAeGF0vpQB5xdJl5jlHxlrp-peSLABZPJO2o2fn5qcRFydOxpP6ak4zMZJfLttzmkjc_g"
+VAPID_SUBJECT = "mailto:week-planner@example.invalid"

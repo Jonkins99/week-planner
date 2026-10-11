@@ -15,8 +15,8 @@
   <link rel="icon" type="image/png" sizes="48x48" href="./icons/favicon-48.png">
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
   <style>html,body{color:#14203f;background:#e7ecf3;margin:0}@media (prefers-color-scheme:dark){html,body{color:#eef2fb;background:#0d1322}}[x-cloak]{display:none!important}</style>
-  <script type="module" crossorigin src="./assets/index-DWluXJ-Y.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-DJuI0NI1.css">
+  <script type="module" crossorigin src="./assets/index-vdaLhz-D.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-D9Oql0Od.css">
 </head>
 <body x-data="app" :class="{ 'has-layer': layers.some(l => l !== 'menu' && l !== 'detail'), 'is-composing': shopFocus && (tab === 'shop' || tab === 'pantry'), 'on-shop': tab === 'shop' || tab === 'pantry' }">
 <!--
@@ -2129,8 +2129,24 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
             <h3>Erinnerungen</h3>
             <p class="aq-text" x-text="notifText"></p>
             <button class="aq-btn aq-btn--primary" x-show="perm !== 'granted'" @click="enableNotifications()"><span x-icon="'bell'"></span>Benachrichtigungen erlauben</button>
-            <p class="aq-fine">Ohne eigenen Server kann eine Web-App Erinnerungen nicht fest vorbestellen: Solange die App offen ist oder im Hintergrund läuft, melden sie sich pünktlich; als installierte App prüft Chrome zusätzlich regelmäßig im Hintergrund. Spätestens beim Öffnen erscheint alles Fällige als Vollbild.</p>
-            <p class="aq-fine" x-show="periodic" x-text="periodic === 'granted' ? 'Hintergrund-Abgleich ist aktiv.' : periodic === 'unsupported' ? 'Hintergrund-Abgleich: in diesem Browser nicht verfügbar.' : 'Hintergrund-Abgleich: erst als installierte App verfügbar.'"></p>
+            <h3 class="aq-sub">Weckdienst (bei geschlossener App)</h3>
+            <p class="aq-text">Damit Fütterung und Wasserwechsel auch bei geschlossener App und gesperrtem Handy als Android-Benachrichtigung kommen, weckt ein kleiner eigener Dienst die App zur richtigen Minute. Er kennt nur Uhrzeiten, keine Inhalte.</p>
+            <template x-if="pushAvailable">
+              <div>
+                <label class="aq-label">Adresse des Weckdienstes
+                  <input class="aq-input" type="url" inputmode="url" x-model="push.url" placeholder="https://week-planner-push.….workers.dev" autocomplete="off" spellcheck="false">
+                </label>
+                <div class="aq-form-row">
+                  <button class="aq-btn aq-btn--primary" @click="setupPush()" :disabled="push.busy || !push.url.trim()"><span :class="{ spin: push.busy }" x-icon="push.busy ? 'spinner' : 'bell-ring'"></span><span x-text="push.on ? 'Neu verbinden' : 'Einrichten'"></span></button>
+                  <button class="aq-btn" x-show="push.on" @click="probePush()" :disabled="push.busy"><span x-icon="'clock'"></span>Probe in 1 Min.</button>
+                  <button class="aq-btn aq-btn--danger" x-show="push.on" @click="stopPush()"><span x-icon="'bell-off'"></span>Abmelden</button>
+                </div>
+                <p class="aq-fine" x-show="push.status" x-text="push.status" role="status"></p>
+                <p class="aq-fine" x-show="push.on && !push.status">Weckdienst ist verbunden.</p>
+              </div>
+            </template>
+            <p class="aq-fine" x-show="!pushAvailable">Dieser Browser kann keine Push-Nachrichten empfangen.</p>
+            <p class="aq-fine">Damit die Meldung auch auf dem Sperrbildschirm groß erscheint: Android-Einstellungen → Apps → Week Planner (bzw. Chrome) → Benachrichtigungen → „Pop-up auf dem Bildschirm“ und „Auf Sperrbildschirm anzeigen“ einschalten, ggf. „Bitte nicht stören“ überschreiben. Einen echten Vollbild-Wecker wie bei der Uhr-App erlaubt Android Web-Apps nicht.</p>
             <div class="aq-form-row">
               <button class="aq-btn aq-btn--small" @click="testAlert(0)"><span x-icon="'bell'"></span>Vorschau</button>
               <button class="aq-btn aq-btn--small" @click="testAlert(3)"><span x-icon="'bell-ring'"></span>Vorschau dringend</button>

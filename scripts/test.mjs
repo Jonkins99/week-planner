@@ -26,6 +26,7 @@ import {
   co2FromPhKh, feedingsOn, atTime, isoDay, speciesConflicts, readValues, trendPerDay,
 } from '../resources/js/tools/aqua.mjs';
 import { readProfile, readAdvice, PROFILE_SCHEMA } from '../resources/js/tools/aqua-ai.mjs';
+import { cleanTimes, splitDue } from '../push-server/worker.js';
 import { categorize, scoreFile, rankCandidates, keepKey, rankOf, pointsFor, findDupes, skipDir } from '../resources/js/tools/sorter.mjs';
 
 let failed = 0;
@@ -497,6 +498,12 @@ test('Aussortierer: Kategorien, Bewertung, Behaltenes nie wieder', () => {
   assert.equal(rankOf(0).level, 1);
   assert.ok(rankOf(5000).level > 2);
   assert.ok(pointsFor('delete', 100 * 1048576, 12) > pointsFor('delete', 100 * 1048576, 1));
+});
+
+test('Weckdienst: Zeiten säubern und Fälliges abtrennen', () => {
+  const now = 1_800_000_000_000;
+  assert.deepEqual(cleanTimes([now + 5, now + 5, 'x', now - 3 * 86400000, now + 1], now), [now + 1, now + 5]);
+  assert.deepEqual(splitDue([now - 1, now, now + 1], now), { due: [now - 1, now], rest: [now + 1] });
 });
 
 await Promise.all(pending);

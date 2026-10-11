@@ -3,7 +3,7 @@
 // Gebaute Dateien (gehashte Namen) und Schriften: aus dem Cache, im Hintergrund erneuert.
 // Fremde Hosts (Gemini, YouTube, Instagram) laufen unberührt am Cache vorbei.
 
-const CACHE = 'week-planner-v6';
+const CACHE = 'week-planner-v7';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(['./', './index.html'])).catch(() => {}));
@@ -93,23 +93,66 @@ function notifyOptions(item) {
   };
 }
 
-async function showDueReminders() {
+async function showDueReminders({ fallback = false } = {}) {
   const plan = await dbRun('kv', 'readonly', (s) => s.get('aqua-schedule')).catch(() => null);
-  if (!plan || !Array.isArray(plan.list)) return;
+  const list = plan && Array.isArray(plan.list) ? plan.list : [];
   const shown = (await dbRun('kv', 'readonly', (s) => s.get('aqua-shown')).catch(() => null)) || {};
-  const answered = new Set(((await dbRun('inbox', 'readonly', (s) => s.getAll()).catch(() => [])) || []).map((a) => a.key));
-  const now = Date.now();
-  let changed = false;
-  for (const item of plan.list) {
-    if (item.at > now || answered.has(item.key)) continue;
+  // Der Weckruf kommt pünktlich zur vollen Minute; kleine Uhrabweichungen zulassen.
+  const now = Date.now() + 90000;
+  let count = 0;
+  for (const item of list) {
+    if (item.at > now || item.done) continue;
     if (item.kind === 'feed' && now - item.at > 6 * 3600000) continue;
     if (shown[item.key] && shown[item.key] >= item.at) continue;
     await self.registration.showNotification(item.title, notifyOptions(item));
-    shown[item.key] = now;
-    changed = true;
+    shown[item.key] = item.at;
+    count++;
   }
-  if (changed) await dbRun('kv', 'readwrite', (s) => s.put(shown, 'aqua-shown')).catch(() => {});
+  if (count) await dbRun('kv', 'readwrite', (s) => s.put(shown, 'aqua-shown')).catch(() => {});
+  // Chrome verlangt bei jedem Push eine sichtbare Meldung. Steht nichts an (schon erledigt),
+  // genügt ein stiller Hinweis, der sich gleich wieder schließt.
+  if (!count && fallback) {
+    const open = await self.registration.getNotifications();
+    if (!open.length) {
+      await self.registration.showNotification('Aquarium', { body: 'Alles erledigt.', tag: 'aqua-idle', silent: true, icon: './icons/icon-192.png' });
+      setTimeout(() => self.registration.getNotifications({ tag: 'aqua-idle' }).then((ns) => ns.forEach((n) => n.close())), 3000);
+    }
+  }
+  return count;
 }
+
+// Antwort aus einer Benachrichtigung gleich im eigenen Plan umsetzen, damit auch bei
+// geschlossener App alles stimmt: „Erledigt" stoppt, „Später" verschiebt und weckt erneut.
+async function applyAnswer(key, action) {
+  const plan = await dbRun('kv', 'readonly', (s) => s.get('aqua-schedule')).catch(() => null);
+  if (!plan || !Array.isArray(plan.list)) return;
+  const item = plan.list.find((x) => x.key === key);
+  if (!item) return;
+  const now = Date.now();
+  if (action === 'done') item.done = now;
+  if (action === 'snooze') {
+    if (item.kind === 'wc') {
+      const due = new Date(item.at);
+      const next = new Date(now + 86400000);
+      next.setHours(due.getHours(), due.getMinutes(), 0, 0);
+      item.at = next.getTime();
+      item.snoozes = (item.snoozes || 0) + 1;
+      const v = item.variants && item.variants[Math.min(item.snoozes, item.variants.length - 1)];
+      if (v) Object.assign(item, v);
+    } else {
+      item.at = now + 3600000;
+    }
+    const cfg = await dbRun('kv', 'readonly', (s) => s.get('push-config')).catch(() => null);
+    if (cfg && cfg.url && cfg.id) {
+      await fetch(`${cfg.url}/wake`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: cfg.id, at: item.at }) }).catch(() => {});
+    }
+  }
+  await dbRun('kv', 'readwrite', (s) => s.put(plan, 'aqua-schedule')).catch(() => {});
+}
+
+self.addEventListener('push', (event) => {
+  event.waitUntil(showDueReminders({ fallback: true }));
+});
 
 self.addEventListener('periodicsync', (event) => {
   if (event.tag === 'tool-reminders') event.waitUntil(showDueReminders());
@@ -128,6 +171,7 @@ self.addEventListener('notificationclick', (event) => {
     const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     if (event.action && key) {
       await dbRun('inbox', 'readwrite', (s) => s.add({ key, action: event.action, at: Date.now() })).catch(() => {});
+      await applyAnswer(key, event.action);
       all.forEach((c) => c.postMessage({ type: 'tool-answer', key, action: event.action }));
       return;
     }

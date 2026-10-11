@@ -4786,15 +4786,15 @@
   .bubble:nth-of-type(3) { left: 48%; width: 9px; height: 9px; animation-delay: -3.1s; }
 
   .tile--aqua .tile-label {
-    color: #0b3a4d;
+    color: #fff;
   }
 
   .aqua-sand {
     position: absolute;
     left: -10%;
     right: -10%;
-    bottom: -18%;
-    height: 34%;
+    bottom: -26%;
+    height: 32%;
     border-radius: 50% 50% 0 0;
     background: #d9b77a;
   }
@@ -5437,9 +5437,14 @@
     pointer-events: none;
   }
 
-  .hp-hall {
+  .hp-inner > * {
+    flex-shrink: 0;
+  }
+
+  .hp-inner > .hp-hall {
     position: relative;
-    flex: 1 0 110px;
+    flex: 1 1 110px;
+    min-height: 36px;
     margin: 0 -18px;
     pointer-events: none;
   }
@@ -5507,7 +5512,7 @@
     box-shadow: inset 0 0 0 1px rgb(212 167 60 / 0.45);
   }
 
-  .hp-seal--small {
+  .hp-seal.hp-seal--small {
     width: 40px;
     height: 40px;
     font-size: 0.82rem;
@@ -5609,8 +5614,8 @@
     flex: none;
     display: grid;
     place-items: center;
-    width: 46px;
-    height: 46px;
+    width: min(46px, calc((100vw - 72px) / 7));
+    height: min(46px, calc((100vw - 72px) / 7));
     border: 0;
     border-radius: 47% 53% 50% 48% / 52% 46% 54% 48%;
     background: radial-gradient(circle at 38% 32%, #b3283a, #7d0f1f 62%, #4c0812);
