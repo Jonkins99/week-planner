@@ -33,6 +33,7 @@ import {
 } from './shopping-ai.mjs';
 import { registerAqua } from './tools/aqua-app.mjs';
 import { registerSorter } from './tools/sorter-app.mjs';
+import { registerKick } from './tools/kick-app.mjs';
 import { loadData, saveData, flushData, readJson, writeJson, UI_KEY, GEMINI_KEY, QUOTA_KEY } from './storage.mjs';
 
 const TABS = [
@@ -2740,6 +2741,7 @@ Alpine.data('app', () => ({
 // Werkzeuge: eigene Komponenten, nur über Ebenen und Meldungen mit der App verbunden.
 registerAqua(Alpine);
 registerSorter(Alpine);
+registerKick(Alpine);
 
 window.Alpine = Alpine;
 Alpine.start();

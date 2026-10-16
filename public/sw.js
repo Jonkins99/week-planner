@@ -3,7 +3,7 @@
 // Gebaute Dateien (gehashte Namen) und Schriften: aus dem Cache, im Hintergrund erneuert.
 // Fremde Hosts (Gemini, YouTube, Instagram) laufen unberührt am Cache vorbei.
 
-const CACHE = 'week-planner-v7';
+const CACHE = 'week-planner-v8';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(['./', './index.html'])).catch(() => {}));
@@ -150,8 +150,13 @@ async function applyAnswer(key, action) {
   await dbRun('kv', 'readwrite', (s) => s.put(plan, 'aqua-schedule')).catch(() => {});
 }
 
+// Jeder angekommene Weckruf wird vermerkt: Die Diagnose in der App vergleicht das mit dem,
+// was der Weckdienst verschickt hat, und erkennt so, ob Android den Push verschluckt.
 self.addEventListener('push', (event) => {
-  event.waitUntil(showDueReminders({ fallback: true }));
+  event.waitUntil((async () => {
+    const count = await showDueReminders({ fallback: true }).catch(() => -1);
+    await dbRun('kv', 'readwrite', (s) => s.put({ at: Date.now(), count }, 'push-log')).catch(() => {});
+  })());
 });
 
 self.addEventListener('periodicsync', (event) => {

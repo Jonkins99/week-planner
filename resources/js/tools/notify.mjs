@@ -188,3 +188,50 @@ export async function testWake(delayMs = 60000) {
   if (!r.ok) throw new Error('Der Weckdienst hat die Probe abgelehnt.');
   return at;
 }
+
+// ------------------------------------------------------------ Diagnose
+// Vergleicht, was der Weckdienst zuletzt verschickt hat, mit dem, was auf diesem Handy
+// angekommen ist (der Service Worker vermerkt jeden Push in kv „push-log").
+
+const clock = (t) => new Date(t).toLocaleString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+
+/** Befund aus Dienst-Status und Handy-Protokoll: { tone: 'ok'|'warn'|'error', lines: [], fix }. */
+export function diagnosePush({ server, phone, permission = 'granted', now = Date.now() }) {
+  const lines = [];
+  if (permission !== 'granted') return { tone: 'error', lines: ['Benachrichtigungen sind für die App nicht erlaubt.'], fix: 'permission' };
+  if (!server) return { tone: 'error', lines: ['Der Weckdienst ist nicht erreichbar (Adresse prüfen, Netz prüfen).'], fix: 'server' };
+  if (server === 'outdated') return { tone: 'warn', lines: ['Der Weckdienst läuft noch in einer älteren Fassung ohne Diagnose. Bitte neu veröffentlichen (push-server: npx wrangler deploy).'], fix: 'deploy' };
+  if (!server.known || !server.subscribed) return { tone: 'error', lines: ['Der Weckdienst kennt dieses Handy nicht (mehr).'], fix: 'register' };
+  lines.push(server.next ? `Nächster Weckruf: ${clock(server.next)} (${server.count} geplant)` : 'Zurzeit ist kein Weckruf geplant.');
+  const sent = server.last;
+  if (sent) lines.push(`Zuletzt verschickt: ${clock(sent.at)} – ${sent.status >= 200 && sent.status < 300 ? 'vom Push-Dienst angenommen' : `abgelehnt (Status ${sent.status || 'Netzfehler'})`}`);
+  else lines.push('Der Weckdienst hat noch keinen Weckruf verschickt.');
+  lines.push(phone?.at ? `Zuletzt auf diesem Handy angekommen: ${clock(phone.at)}` : 'Auf diesem Handy ist noch kein Weckruf angekommen.');
+  if (sent && sent.status && (sent.status < 200 || sent.status >= 300)) return { tone: 'error', lines, fix: 'register' };
+  // Verschickt, aber nicht (oder viel später) angekommen: Android hat den Push zurückgehalten.
+  if (sent && sent.status >= 200 && sent.status < 300 && (!phone?.at || phone.at < sent.at - 60000) && now - sent.at > 3 * 60000) {
+    return { tone: 'warn', lines, fix: 'battery' };
+  }
+  return { tone: 'ok', lines, fix: sent ? null : 'probe' };
+}
+
+/** Status beim Weckdienst und Protokoll des Handys holen und auswerten. */
+export async function pushDiagnosis() {
+  const cfg = await pushConfig();
+  if (!cfg) return { tone: 'error', lines: ['Der Weckdienst ist auf diesem Handy nicht eingerichtet.'], fix: 'register' };
+  let server = null;
+  try {
+    const r = await fetch(`${cfg.url}/status?id=${encodeURIComponent(cfg.id)}`, { cache: 'no-store' });
+    if (r.ok) server = await r.json();
+    else if (r.status === 400) server = 'outdated';
+  } catch { /* nicht erreichbar */ }
+  let sameSub = true;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    sameSub = !!sub && sub.endpoint === cfg.endpoint;
+  } catch { /* egal */ }
+  const res = diagnosePush({ server, phone: await idbGet('kv', 'push-log'), permission: notifPermission() });
+  if (!sameSub && res.tone === 'ok') return { tone: 'error', lines: [...res.lines, 'Das Push-Abo dieses Handys hat sich geändert.'], fix: 'register' };
+  return res;
+}

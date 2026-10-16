@@ -17,7 +17,7 @@ import { TimeChart, clampView } from './chart.mjs';
 import { idbGet, idbSet, idbDel } from './idb.mjs';
 import {
   notifSupported, notifPermission, askPermission, showNotification, writeSchedule, registerPeriodic, takeAnswers, onWorkerMessage,
-  pushSupported, pushConfig, enablePush, refreshPush, disablePush, syncWakeTimes, testWake,
+  pushSupported, pushConfig, enablePush, refreshPush, disablePush, syncWakeTimes, testWake, pushDiagnosis,
 } from './notify.mjs';
 import { generateJson, QuotaBook, normalizeKeys } from '../gemini.mjs';
 import { readJson, writeJson, GEMINI_KEY, QUOTA_KEY } from '../storage.mjs';
@@ -31,6 +31,16 @@ const PRESETS = [
   { key: '7', label: '7 T', days: 7 }, { key: '30', label: '30 T', days: 30 }, { key: '90', label: '3 M', days: 90 },
   { key: '365', label: '1 J', days: 365 }, { key: 'all', label: 'Alles', days: 0 },
 ];
+
+// Abhilfe je Befund der Weckdienst-Diagnose.
+const PUSH_FIX = {
+  battery: 'Der Weckdienst hat geweckt, aber Android hat den Push nicht an die App durchgelassen. Abhilfe: Android-Einstellungen → Apps → Chrome → Akku → „Nicht eingeschränkt" (bei installierter App dasselbe für „Week Planner"). Samsung: Akku → Hintergrundnutzungslimits → Chrome aus „Apps im Tiefschlaf" bzw. „Schlafende Apps" entfernen. Xiaomi, Huawei, OnePlus: „Autostart" für Chrome erlauben. Die App nie über „Beenden erzwingen" schließen – Wegwischen aus der Übersicht ist in Ordnung.',
+  register: 'Oben „Neu verbinden" antippen, danach „Probe in 1 Min.".',
+  server: 'Adresse des Weckdienstes prüfen (im Browser aufrufen: dort muss „ok": true stehen).',
+  deploy: 'Auf dem Rechner mit dem Weckdienst: cd push-server && npx wrangler deploy',
+  permission: 'Benachrichtigungen erlauben (Knopf oben bzw. App-Info → Benachrichtigungen).',
+  probe: '„Probe in 1 Min." antippen, App komplett schließen, 2 Minuten warten, dann hier erneut prüfen.',
+};
 
 const quota = new QuotaBook({ load: () => readJson(QUOTA_KEY, {}), save: (v) => writeJson(QUOTA_KEY, v) });
 const geminiKeys = () => normalizeKeys(readJson(GEMINI_KEY, {})?.keys || []);
@@ -82,6 +92,7 @@ export function registerAqua(Alpine) {
     view: null,
     settingsForm: null,
     push: { url: '', on: false, busy: false, status: '' },
+    pushCheck: null,
     // Interne Zeitgeber: hier deklariert, damit sie nicht im Zustand der App landen.
     _saveT: 0,
     _remT: 0,
@@ -876,6 +887,16 @@ export function registerAqua(Alpine) {
         this.push.status = 'Probe läuft: App jetzt schließen und Handy sperren – innerhalb von ca. 1–2 Minuten sollte „Weckdienst funktioniert" erscheinen.';
       } catch (e) {
         this.push.status = e?.message || 'Probe gescheitert.';
+      } finally {
+        this.push.busy = false;
+      }
+    },
+
+    async checkPush() {
+      this.push.busy = true;
+      try {
+        const res = await pushDiagnosis();
+        this.pushCheck = { ...res, fixText: PUSH_FIX[res.fix] || '' };
       } finally {
         this.push.busy = false;
       }

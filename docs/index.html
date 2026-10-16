@@ -15,8 +15,8 @@
   <link rel="icon" type="image/png" sizes="48x48" href="./icons/favicon-48.png">
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
   <style>html,body{color:#14203f;background:#e7ecf3;margin:0}@media (prefers-color-scheme:dark){html,body{color:#eef2fb;background:#0d1322}}[x-cloak]{display:none!important}</style>
-  <script type="module" crossorigin src="./assets/index-vdaLhz-D.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-D9Oql0Od.css">
+  <script type="module" crossorigin src="./assets/index-VkI5ODU2.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-B9vyz-cv.css">
 </head>
 <body x-data="app" :class="{ 'has-layer': layers.some(l => l !== 'menu' && l !== 'detail'), 'is-composing': shopFocus && (tab === 'shop' || tab === 'pantry'), 'on-shop': tab === 'shop' || tab === 'pantry' }">
 <!--
@@ -509,15 +509,14 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
             <span class="tile-label">Datei-Aussortierer</span>
           </button>
 
-          <div class="tile tile--kick is-soon" aria-disabled="true">
+          <button class="tile tile--kick" @click="$dispatch('kick-open')" aria-label="Kicktipp-Helfer öffnen">
             <span class="kick-pitch" aria-hidden="true">
               <span class="kick-circle"></span>
               <span class="kick-ball"></span>
               <span class="kick-score"><b>2</b><i>:</i><b class="kick-flip">1</b></span>
             </span>
             <span class="tile-label">Kicktipp-Support</span>
-            <span class="tile-soon">Bald</span>
-          </div>
+          </button>
 
           <div class="tile tile--sleep is-soon" aria-disabled="true">
             <span class="sleep-sky" aria-hidden="true">
@@ -2139,13 +2138,21 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
                 <div class="aq-form-row">
                   <button class="aq-btn aq-btn--primary" @click="setupPush()" :disabled="push.busy || !push.url.trim()"><span :class="{ spin: push.busy }" x-icon="push.busy ? 'spinner' : 'bell-ring'"></span><span x-text="push.on ? 'Neu verbinden' : 'Einrichten'"></span></button>
                   <button class="aq-btn" x-show="push.on" @click="probePush()" :disabled="push.busy"><span x-icon="'clock'"></span>Probe in 1 Min.</button>
+                  <button class="aq-btn" x-show="push.on" @click="checkPush()" :disabled="push.busy"><span x-icon="'scan'"></span>Prüfen</button>
                   <button class="aq-btn aq-btn--danger" x-show="push.on" @click="stopPush()"><span x-icon="'bell-off'"></span>Abmelden</button>
                 </div>
                 <p class="aq-fine" x-show="push.status" x-text="push.status" role="status"></p>
                 <p class="aq-fine" x-show="push.on && !push.status">Weckdienst ist verbunden.</p>
+                <template x-if="pushCheck">
+                  <div class="aq-diag" :class="`is-${pushCheck.tone}`" role="status">
+                    <template x-for="l in pushCheck.lines" :key="l"><p x-text="l"></p></template>
+                    <p class="aq-diag-fix" x-show="pushCheck.fixText" x-text="pushCheck.fixText"></p>
+                  </div>
+                </template>
               </div>
             </template>
             <p class="aq-fine" x-show="!pushAvailable">Dieser Browser kann keine Push-Nachrichten empfangen.</p>
+            <p class="aq-fine">Kommen Meldungen nur, solange die App im Hintergrund noch offen ist, hält meist die Akku-Optimierung von Android die Weckrufe zurück: Chrome (und die installierte App) unter Akku auf „Nicht eingeschränkt" stellen. „Prüfen" zeigt, ob der Weckruf verschickt wurde und angekommen ist.</p>
             <p class="aq-fine">Damit die Meldung auch auf dem Sperrbildschirm groß erscheint: Android-Einstellungen → Apps → Week Planner (bzw. Chrome) → Benachrichtigungen → „Pop-up auf dem Bildschirm“ und „Auf Sperrbildschirm anzeigen“ einschalten, ggf. „Bitte nicht stören“ überschreiben. Einen echten Vollbild-Wecker wie bei der Uhr-App erlaubt Android Web-Apps nicht.</p>
             <div class="aq-form-row">
               <button class="aq-btn aq-btn--small" @click="testAlert(0)"><span x-icon="'bell'"></span>Vorschau</button>
@@ -2375,6 +2382,137 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
       <template x-if="soLevelUp">
         <div><span x-icon="'crown'"></span><small>Neuer Rang</small><b x-text="soLevelUp.title"></b></div>
       </template>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ KICKTIPP-HELFER (eigene Komponente `kick`) -->
+<div class="kt-root" x-data="kick" @kick-open.window="ktOpen()">
+  <div class="kt" role="dialog" aria-modal="true" aria-labelledby="kt-title" x-show="isOpen('kick')" x-transition:enter="page-enter" x-transition:enter-start="page-from" x-transition:leave="page-leave" x-transition:leave-end="page-from" x-cloak>
+    <header class="kt-bar">
+      <button class="kt-round" @click="closeLayer('kick')" aria-label="Zurück"><span x-icon="'back'"></span></button>
+      <div class="kt-head">
+        <h2 id="kt-title" class="kt-brand">Kicktipp</h2>
+        <span class="kt-range" x-text="ktRange"></span>
+      </div>
+      <button class="kt-round" :class="{ 'is-on': ktShowRules }" @click="ktShowRules = !ktShowRules" :aria-expanded="ktShowRules" aria-label="Punkteregeln"><span x-icon="'target'"></span></button>
+      <button class="kt-round" @click="ktLoad(true)" :disabled="ktBusy" aria-label="Neu laden"><span :class="{ spin: ktBusy }" x-icon="ktBusy ? 'spinner' : 'refresh'"></span></button>
+    </header>
+
+    <div class="kt-scroll">
+      <section class="kt-rules" x-show="ktShowRules" x-transition.opacity>
+        <p class="kt-rules-title">Punkte in eurer Tipprunde</p>
+        <template x-for="r in [{ k: 'exact', l: 'Ergebnis' }, { k: 'diff', l: 'Tordifferenz' }, { k: 'tendency', l: 'Tendenz' }]" :key="r.k">
+          <div class="kt-rule">
+            <span x-text="r.l"></span>
+            <button class="kt-step" @click="ktRule(r.k, -1)" :aria-label="`${r.l} weniger`"><span x-icon="'minus'"></span></button>
+            <b x-text="ktData.rules[r.k]"></b>
+            <button class="kt-step" @click="ktRule(r.k, 1)" :aria-label="`${r.l} mehr`"><span x-icon="'plus'"></span></button>
+          </div>
+        </template>
+        <p class="kt-fine">Danach richtet sich „Tipp“: das Ergebnis mit den meisten erwarteten Punkten laut Quoten-Modell (Tordifferenz zählt nicht bei Remis). <button class="kt-link" @click="ktResetRules()">Standard 4/3/2</button></p>
+      </section>
+
+      <p class="kt-note is-error" x-show="ktError" x-text="ktError" role="status"></p>
+      <p class="kt-note" x-show="!ktHasKey">Für die KI-Einschätzung fehlt ein Gemini-Schlüssel (Haushalt-Einstellungen). Quoten, Modell und Tipp gibt es trotzdem.</p>
+      <p class="kt-note" x-show="ktAiStatus" role="status"><span class="spin" x-icon="'spinner'"></span><span x-text="ktAiStatus"></span></p>
+      <p class="kt-note is-error" x-show="ktAiError && !ktAiBusy"><span x-text="ktAiError"></span> <button class="kt-link" @click="ktRunAi(true)">Erneut</button></p>
+
+      <template x-if="!ktCards.length && ktBusy">
+        <div class="kt-skeleton" aria-hidden="true"><i></i><i></i><i></i></div>
+      </template>
+      <div class="kt-empty" x-show="!ktCards.length && !ktBusy">
+        <span x-icon="'calendar-plus'"></span>
+        <p>In den nächsten drei Tagen spielt keiner eurer Wettbewerbe.</p>
+      </div>
+
+      <template x-for="g in ktGroups" :key="g.key">
+        <section class="kt-league" :class="`kt-league--${g.key}`">
+          <button class="kt-league-head" @click="ktToggleLeague(g.key)" :aria-expanded="!ktCollapsed(g.key)">
+            <span class="kt-league-name" x-text="g.label"></span>
+            <span class="kt-league-count" x-text="g.open ? `${g.open} offen` : 'alles getippt'"></span>
+            <span class="kt-chev" :class="{ 'is-closed': ktCollapsed(g.key) }" x-icon="'chevron-down'"></span>
+          </button>
+          <div class="kt-cards" x-show="!ktCollapsed(g.key)">
+            <template x-for="c in g.cards" :key="c.id">
+              <article class="kt-card" :class="{ 'is-compact': ktCompact(c), 'is-done': ktIsDone(c.id), 'is-live': c.state === 'in', 'is-over': c.state === 'post' }">
+                <div class="kt-top">
+                  <button class="kt-top-main" @click="ktCompact(c) || ktPeek[c.id] ? ktTogglePeek(c.id) : null" :tabindex="ktCompact(c) || ktPeek[c.id] ? 0 : -1">
+                    <span class="kt-when" x-text="c.state === 'in' ? `Live ${c.detail}` : c.when"></span>
+                    <span class="kt-live" x-show="c.score && !ktCompact(c)" x-text="c.score"></span>
+                    <span class="kt-phase" x-show="c.phase" x-text="c.phase"></span>
+                    <span class="kt-mini" x-show="ktCompact(c)">
+                      <span x-text="c.home.name"></span><b x-text="c.score || '–'"></b><span x-text="c.away.name"></span>
+                    </span>
+                  </button>
+                  <span class="kt-tip-mini" x-show="ktCompact(c) && c.tip && c.state === 'pre'" x-text="c.tip"></span>
+                  <button class="kt-check" x-show="c.state !== 'post'" :aria-pressed="ktIsDone(c.id)" @click="ktToggleDone(c.id)" :aria-label="ktIsDone(c.id) ? 'Als nicht getippt markieren' : 'Als getippt markieren'"><span x-icon="'check'"></span></button>
+                </div>
+
+                <template x-if="!ktCompact(c)">
+                  <div class="kt-body">
+                    <div class="kt-sides">
+                      <template x-for="side in [c.home, c.away]" :key="side.id">
+                        <div class="kt-side">
+                          <div class="kt-team">
+                            <img class="kt-logo" :src="side.logo" alt="" loading="lazy" @error="$el.style.visibility = 'hidden'">
+                            <span class="kt-name" x-text="side.name"></span>
+                            <span class="kt-pos" x-show="side.pos.length" x-text="ktPosText(side)"></span>
+                          </div>
+                          <ol class="kt-form" :aria-label="`Letzte Spiele ${side.name}`">
+                            <template x-for="f in side.form" :key="f.key">
+                              <li><i :class="`is-${f.res}`" x-text="f.res"></i><b x-text="f.score"></b><span x-text="f.opp"></span><small x-text="f.tag || f.venue"></small></li>
+                            </template>
+                          </ol>
+                          <p class="kt-nodata" x-show="!side.known">Keine Spieldaten</p>
+                          <table class="kt-avg" x-show="side.known">
+                            <thead><tr><th scope="col">Ø</th><th scope="col">3</th><th scope="col">5</th><th scope="col">10</th></tr></thead>
+                            <tbody>
+                              <tr><th scope="row">Tore</th><template x-for="(v, i) in side.gf" :key="i"><td x-text="v"></td></template></tr>
+                              <tr><th scope="row">Geg.</th><template x-for="(v, i) in side.ga" :key="i"><td x-text="v"></td></template></tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </template>
+                    </div>
+
+                    <div class="kt-odds" x-show="c.odds" :aria-label="c.odds ? `Quoten: Heimsieg ${c.odds[0].label}, Remis ${c.odds[1].label}, Auswärtssieg ${c.odds[2].label}` : ''">
+                      <template x-for="o in c.odds || []" :key="o.k">
+                        <span class="kt-odd" :class="{ 'is-top': c.odds && o.p === Math.max(...c.odds.map((x) => x.p)) }" :style="`--w:${Math.max(o.p, 0.14)}`"><b x-text="o.k"></b><span x-text="o.label"></span></span>
+                      </template>
+                    </div>
+
+                    <div class="kt-verdict">
+                      <div class="kt-ai">
+                        <template x-if="ktAiOf(c.id)">
+                          <span class="kt-ai-list">
+                            <span class="kt-ai-icon" x-icon="'sparkles'" aria-label="KI"></span>
+                            <template x-for="t in ktAiOf(c.id).tips" :key="`${t.h}:${t.a}`">
+                              <span class="kt-ai-tip"><b x-text="`${t.h}:${t.a}`"></b><small x-text="`${t.pct}%`"></small></span>
+                            </template>
+                          </span>
+                        </template>
+                        <template x-if="!ktAiOf(c.id) && c.model">
+                          <span class="kt-ai-list is-model" title="Poisson-Modell aus den Quoten">
+                            <span class="kt-ai-icon" x-icon="'chart'" aria-label="Modell"></span>
+                            <template x-for="t in c.model.top" :key="`${t.h}:${t.a}`">
+                              <span class="kt-ai-tip"><b x-text="`${t.h}:${t.a}`"></b><small x-text="`${Math.round(t.p * 100)}%`"></small></span>
+                            </template>
+                          </span>
+                        </template>
+                      </div>
+                      <span class="kt-tip" x-show="c.tip" :title="`Erwartet ${c.ep} Punkte · erwartete Tore ${c.xg}`"><small>Tipp</small><b x-text="c.tip"></b></span>
+                    </div>
+                    <p class="kt-why" x-show="ktAiOf(c.id)?.note" x-text="ktAiOf(c.id)?.note"></p>
+                  </div>
+                </template>
+              </article>
+            </template>
+          </div>
+        </section>
+      </template>
+
+      <p class="kt-fine kt-foot" x-show="ktCards.length"><span x-text="ktStamp"></span> · Daten: ESPN, Quoten: DraftKings. „Tipp“ = meiste erwartete Punkte laut Modell; die KI nennt die wahrscheinlichsten Ergebnisse.</p>
     </div>
   </div>
 </div>

@@ -26,7 +26,13 @@ import {
   co2FromPhKh, feedingsOn, atTime, isoDay, speciesConflicts, readValues, trendPerDay,
 } from '../resources/js/tools/aqua.mjs';
 import { readProfile, readAdvice, PROFILE_SCHEMA } from '../resources/js/tools/aqua-ai.mjs';
-import { cleanTimes, splitDue } from '../push-server/worker.js';
+import { cleanTimes, splitDue, deviceStatus } from '../push-server/worker.js';
+import { diagnosePush } from '../resources/js/tools/notify.mjs';
+import {
+  americanToProb, readOdds, readEvent, readSchedule, goalStats, domesticLeague, readStandings, positionsFor, fitLambdas,
+  scoreMatrix, outcomeOf, pointsFor as kickPoints, bestTip, matchWindow, deName, LEAGUES,
+} from '../resources/js/tools/kick.mjs';
+import { readKick, acceptKick } from '../resources/js/tools/kick-ai.mjs';
 import { categorize, scoreFile, rankCandidates, keepKey, rankOf, pointsFor, findDupes, skipDir } from '../resources/js/tools/sorter.mjs';
 
 let failed = 0;
@@ -504,6 +510,90 @@ test('Weckdienst: Zeiten säubern und Fälliges abtrennen', () => {
   const now = 1_800_000_000_000;
   assert.deepEqual(cleanTimes([now + 5, now + 5, 'x', now - 3 * 86400000, now + 1], now), [now + 1, now + 5]);
   assert.deepEqual(splitDue([now - 1, now, now + 1], now), { due: [now - 1, now], rest: [now + 1] });
+});
+
+test('Weckdienst: Status und Diagnose', () => {
+  const now = 1_800_000_000_000;
+  assert.deepEqual(deviceStatus(null), { known: false });
+  const st = deviceStatus({ sub: { endpoint: 'https://x' }, times: [now + 5000, now + 1000], last: { at: now - 1000, status: 201 } }, now);
+  assert.equal(st.next, now + 1000);
+  assert.equal(st.count, 2);
+  const server = { known: true, subscribed: true, next: null, count: 0, last: { at: now - 10 * 60000, status: 201 } };
+  assert.equal(diagnosePush({ server, phone: { at: now - 10 * 60000 + 2000 }, now }).tone, 'ok');
+  assert.equal(diagnosePush({ server, phone: { at: now - 86400000 }, now }).fix, 'battery');
+  assert.equal(diagnosePush({ server, phone: null, now }).fix, 'battery');
+  assert.equal(diagnosePush({ server: { ...server, last: { at: now - 60000, status: 410 } }, phone: null, now }).fix, 'register');
+  assert.equal(diagnosePush({ server: null, now }).fix, 'server');
+  assert.equal(diagnosePush({ server: 'outdated', now }).fix, 'deploy');
+  assert.equal(diagnosePush({ server, permission: 'denied', now }).fix, 'permission');
+});
+
+test('Kicktipp: Quoten, Spiele, Form und Tabellen', () => {
+  assert.ok(Math.abs(americanToProb('+300') - 0.25) < 1e-9);
+  assert.ok(Math.abs(americanToProb('-150') - 0.6) < 1e-9);
+  assert.equal(americanToProb('EVEN'), 0.5);
+  assert.equal(americanToProb('x'), null);
+  const odds = readOdds({ overUnder: 2.5, moneyline: { home: { close: { odds: '+150' } }, away: { close: { odds: '+170' } }, draw: { close: { odds: '+240' } } }, total: { over: { close: { odds: '-120' } }, under: { close: { odds: '+100' } } } });
+  assert.ok(Math.abs(odds.home + odds.draw + odds.away - 1) < 1e-9);
+  assert.ok(odds.home > odds.away && odds.over > 0.5 && odds.line === 2.5);
+  assert.equal(readOdds({ drawOdds: { moneyLine: 300 } }), null);
+  const team = (id, name, ha, score) => ({ homeAway: ha, score, team: { id, shortDisplayName: name, displayName: name } });
+  const ev = readEvent({ id: 7, date: '2026-10-17T13:30Z', season: { slug: 'round-of-16' }, competitions: [{ status: { type: { state: 'pre' } }, competitors: [team('1', 'Cologne', 'home', '0'), team('2', 'Bayern Munich', 'away', '0')] }] }, LEAGUES[2]);
+  assert.equal(ev.home.name, 'Köln');
+  assert.equal(ev.away.name, 'Bayern');
+  assert.equal(ev.score, null);
+  assert.equal(deName('Dortmund'), 'Dortmund');
+  const game = (id, date, slug, me, them, state = 'post') => ({ id, date, league: { slug }, competitions: [{ status: { type: { state } }, competitors: [team('1', 'Köln', 'home', String(me)), team('9', 'Mainz', 'away', String(them))] }] });
+  const games = readSchedule({ events: [
+    game(1, '2026-10-01T18:00Z', 'ger.1', 2, 1), game(2, '2026-10-05T18:00Z', 'club.friendly', 5, 0),
+    game(3, '2026-10-08T18:00Z', 'ger.dfb_pokal', 0, 0), game(4, '2026-10-12T18:00Z', 'ger.1', 1, 3), game(5, '2026-10-20T18:00Z', 'ger.1', 0, 0, 'pre'),
+  ] }, '1');
+  assert.deepEqual(games.map((g) => g.res), ['N', 'U', 'S']);
+  assert.equal(games[0].opp, 'Mainz');
+  assert.equal(domesticLeague(games), 'ger.1');
+  const st = goalStats(games);
+  assert.equal(st[3].gf, 1);
+  assert.equal(st[3].ga, 4 / 3);
+  assert.equal(st[5].n, 3);
+  const table = readStandings({ children: [{ standings: { entries: [{ team: { id: '1' }, stats: [{ name: 'rank', value: 4 }, { name: 'points', value: 20 }] }] } }] });
+  assert.equal(table['1'].rank, 4);
+  const tables = { 'ger.1': table, 'uefa.champions': { 1: { rank: 9 } } };
+  assert.deepEqual(positionsFor({ league: 'cl', phase: 'round-of-16' }, '1', { tables, domestic: 'ger.1' }), [{ label: 'BL', rank: 4 }, { label: 'CL', rank: 9 }]);
+  assert.deepEqual(positionsFor({ league: 'cl', phase: 'league-phase' }, '1', { tables, domestic: 'ger.1' }), [{ label: '', rank: 9 }]);
+  assert.deepEqual(positionsFor({ league: 'dfb' }, '1', { tables, domestic: 'ger.1' }), [{ label: 'BL', rank: 4 }]);
+  assert.deepEqual(positionsFor({ league: 'bl1' }, '1', { tables }), [{ label: '', rank: 4 }]);
+  const win = matchWindow(new Date(2026, 9, 16, 21).getTime());
+  assert.deepEqual(win.days, ['20261016', '20261017', '20261018']);
+});
+
+test('Kicktipp: Modell und Punkte', () => {
+  assert.equal(kickPoints([2, 1], [2, 1]), 4);
+  assert.equal(kickPoints([2, 1], [3, 2]), 3);
+  assert.equal(kickPoints([2, 1], [3, 0]), 2);
+  assert.equal(kickPoints([1, 1], [2, 2]), 2);
+  assert.equal(kickPoints([1, 1], [2, 1]), 0);
+  const fit = fitLambdas({ home: 0.5, draw: 0.25, away: 0.25, line: 2.5, over: 0.55 });
+  const o = outcomeOf(scoreMatrix(fit.lh, fit.la), 2.5);
+  assert.ok(Math.abs(o.home - 0.5) < 0.03 && Math.abs(o.draw - 0.25) < 0.03);
+  assert.ok(fit.lh > fit.la);
+  const tip = bestTip(scoreMatrix(1.8, 0.9));
+  assert.ok(tip.h > tip.a);
+  assert.ok(tip.ep > 1);
+  const even = bestTip(scoreMatrix(1.1, 1.1), { exact: 4, diff: 3, tendency: 2 });
+  assert.ok(even.ep > 0);
+});
+
+test('Kicktipp: KI-Antwort säubern', () => {
+  const data = { matches: [
+    { id: '11', tips: [{ home: 1, away: 1, percent: 12 }, { home: 2, away: 1, percent: 15.4 }, { home: 2, away: 1, percent: 9 }, { home: -1, away: 0, percent: 8 }], note: 'Heimstark.' },
+    { id: '99', tips: [{ home: 1, away: 0, percent: 10 }], note: '' },
+    { id: '12', tips: [], note: 'x' },
+  ] };
+  const r = readKick(data, ['11', '12']);
+  assert.deepEqual(Object.keys(r), ['11']);
+  assert.deepEqual(r['11'].tips, [{ h: 2, a: 1, pct: 15 }, { h: 1, a: 1, pct: 12 }, { h: 0, a: 0, pct: 8 }]);
+  assert.equal(acceptKick(['11', '12'])(data), true);
+  assert.equal(acceptKick(['11', '12', '13'])(data), false);
 });
 
 await Promise.all(pending);

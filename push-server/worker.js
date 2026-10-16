@@ -65,7 +65,9 @@ async function vapidHeader(env, endpoint) {
 async function sendPush(env, sub) {
   const res = await fetch(sub.endpoint, {
     method: 'POST',
-    headers: { authorization: await vapidHeader(env, sub.endpoint), ttl: '3600', urgency: 'high', 'content-length': '0' },
+    // Lange Lebensdauer: Ist das Handy gerade offline oder im Tiefschlaf, stellt der
+    // Push-Dienst den Weckruf nach, statt ihn nach einer Stunde zu verwerfen.
+    headers: { authorization: await vapidHeader(env, sub.endpoint), ttl: '21600', urgency: 'high', 'content-length': '0' },
   });
   return res.status;
 }
@@ -108,13 +110,20 @@ async function tick(env) {
     }
     // Bei vorübergehenden Fehlern im nächsten Durchlauf erneut versuchen (max. 10 Minuten).
     const keep = status >= 200 && status < 300 ? rest : [...due.filter((t) => now - t < 10 * 60000), ...rest];
-    await writeDevice(env, id, { ...dev, times: keep });
+    await writeDevice(env, id, { ...dev, times: keep, last: { at: now, status } });
   }
   if (gone) {
     const alive = [];
     for (const id of ids) if (await env.PUSH.get(`dev:${id}`)) alive.push(id);
     await env.PUSH.put('devices', JSON.stringify(alive));
   }
+}
+
+/** Kurzbericht eines Geräts (ohne Abo-Daten). */
+export function deviceStatus(dev, now = Date.now()) {
+  if (!dev) return { known: false };
+  const times = (dev.times || []).filter((t) => t > now - 10 * 60000).sort((a, b) => a - b);
+  return { known: true, subscribed: !!dev.sub?.endpoint, next: times[0] || null, count: times.length, last: dev.last || null, updated: dev.updated || null };
 }
 
 async function handle(req, env) {
@@ -126,6 +135,12 @@ async function handle(req, env) {
     try { await signingKey(env); } catch { keys = 'VAPID_PRIVATE_JWK fehlt oder ist kein gültiger Schlüssel – node setup.mjs --neue-schluessel'; }
     if (!/^B[A-Za-z0-9_-]{80,}$/.test(env.VAPID_PUBLIC || '')) keys = 'VAPID_PUBLIC fehlt – node setup.mjs --neue-schluessel';
     return json({ ok: keys === 'ok', service: 'week-planner-push', keys });
+  }
+  // Diagnose für die App: Ist das Gerät bekannt, wann wird es geweckt, wie lief der letzte Weckruf?
+  if (req.method === 'GET' && url.pathname === '/status') {
+    const id = url.searchParams.get('id');
+    if (!validId(id)) return json({ error: 'id' }, 400);
+    return json(deviceStatus(await readDevice(env, id)));
   }
 
   const data = await body(req);
