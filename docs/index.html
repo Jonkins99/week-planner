@@ -15,8 +15,8 @@
   <link rel="icon" type="image/png" sizes="48x48" href="./icons/favicon-48.png">
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
   <style>html,body{color:#14203f;background:#e7ecf3;margin:0}@media (prefers-color-scheme:dark){html,body{color:#eef2fb;background:#0d1322}}[x-cloak]{display:none!important}</style>
-  <script type="module" crossorigin src="./assets/index-VkI5ODU2.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-B9vyz-cv.css">
+  <script type="module" crossorigin src="./assets/index-BQ3B5cyz.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-Cdt064hK.css">
 </head>
 <body x-data="app" :class="{ 'has-layer': layers.some(l => l !== 'menu' && l !== 'detail'), 'is-composing': shopFocus && (tab === 'shop' || tab === 'pantry'), 'on-shop': tab === 'shop' || tab === 'pantry' }">
 <!--
@@ -488,15 +488,23 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
             <span class="tile-label">Aquarium-Helfer</span>
           </button>
 
-          <div class="tile tile--todo is-soon" aria-disabled="true">
+          <button class="tile tile--todo" @click="$dispatch('todo-open')" aria-label="To-do-Liste öffnen">
             <span class="todo-card" aria-hidden="true">
               <span class="todo-line"><svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="5"/><path d="m7 12.5 3.5 3.5L17 9"/></svg><i></i></span>
               <span class="todo-line"><svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="5"/><path d="m7 12.5 3.5 3.5L17 9"/></svg><i></i></span>
               <span class="todo-line"><svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="5"/><path d="m7 12.5 3.5 3.5L17 9"/></svg><i></i></span>
             </span>
             <span class="tile-label">To-do-Liste</span>
-            <span class="tile-soon">Bald</span>
-          </div>
+          </button>
+
+          <button class="tile tile--xmas" @click="$dispatch('xmas-open')" aria-label="Weihnachtsplaner öffnen">
+            <span class="xmas-scene" aria-hidden="true">
+              <i class="xmas-snow"></i><i class="xmas-snow"></i><i class="xmas-snow"></i><i class="xmas-snow"></i><i class="xmas-snow"></i><i class="xmas-snow"></i>
+              <span class="xmas-gift"><span class="xmas-lid"></span><span class="xmas-box"></span></span>
+              <span class="xmas-hill"></span>
+            </span>
+            <span class="tile-label">Weihnachts&shy;planer</span>
+          </button>
 
           <button class="tile tile--swipe" @click="$dispatch('sorter-open')" aria-label="Datei-Aussortierer öffnen">
             <span class="swipe-stack" aria-hidden="true">
@@ -518,18 +526,8 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
             <span class="tile-label">Kicktipp-Support</span>
           </button>
 
-          <div class="tile tile--sleep is-soon" aria-disabled="true">
-            <span class="sleep-sky" aria-hidden="true">
-              <span class="sleep-moon"></span>
-              <i class="sleep-star"></i><i class="sleep-star"></i><i class="sleep-star"></i>
-              <span class="sleep-blob"><i></i><i></i></span>
-              <span class="sleep-z">z</span><span class="sleep-z">z</span>
-            </span>
-            <span class="tile-label">Pokémon-Sleep-Helfer</span>
-            <span class="tile-soon">Bald</span>
-          </div>
         </div>
-        <p class="plan-hint">Kleine Helfer abseits der Küche. Weitere folgen.</p>
+        <p class="plan-hint">Kleine Helfer abseits der Küche.</p>
       </div>
     </section>
   </main>
@@ -2410,7 +2408,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
             <button class="kt-step" @click="ktRule(r.k, 1)" :aria-label="`${r.l} mehr`"><span x-icon="'plus'"></span></button>
           </div>
         </template>
-        <p class="kt-fine">Danach richtet sich „Tipp“: das Ergebnis mit den meisten erwarteten Punkten laut Quoten-Modell (Tordifferenz zählt nicht bei Remis). <button class="kt-link" @click="ktResetRules()">Standard 4/3/2</button></p>
+        <p class="kt-fine">Danach richtet sich „Tipp“: das Ergebnis mit den meisten erwarteten Punkten laut Modell – aus den Quoten, ohne Quoten aus der KI-Einschätzung bzw. aus Form und Spielklasse (Tordifferenz zählt nicht bei Remis). <button class="kt-link" @click="ktResetRules()">Standard 4/3/2</button></p>
       </section>
 
       <p class="kt-note is-error" x-show="ktError" x-text="ktError" role="status"></p>
@@ -2493,7 +2491,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
                           </span>
                         </template>
                         <template x-if="!ktAiOf(c.id) && c.model">
-                          <span class="kt-ai-list is-model" title="Poisson-Modell aus den Quoten">
+                          <span class="kt-ai-list is-model" :title="c.model.source === 'odds' ? 'Poisson-Modell aus den Quoten' : 'Grobes Modell aus Form und Spielklasse'">
                             <span class="kt-ai-icon" x-icon="'chart'" aria-label="Modell"></span>
                             <template x-for="t in c.model.top" :key="`${t.h}:${t.a}`">
                               <span class="kt-ai-tip"><b x-text="`${t.h}:${t.a}`"></b><small x-text="`${Math.round(t.p * 100)}%`"></small></span>
@@ -2513,6 +2511,263 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
       </template>
 
       <p class="kt-fine kt-foot" x-show="ktCards.length"><span x-text="ktStamp"></span> · Daten: ESPN, Quoten: DraftKings. „Tipp“ = meiste erwartete Punkte laut Modell; die KI nennt die wahrscheinlichsten Ergebnisse.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ TO-DO-LISTE (eigene Komponente `todo`) -->
+<div class="td-root" x-data="todo" @todo-open.window="tdOpen()">
+  <div class="td" role="dialog" aria-modal="true" aria-labelledby="td-title" x-show="isOpen('todo')" x-transition:enter="page-enter" x-transition:enter-start="page-from" x-transition:leave="page-leave" x-transition:leave-end="page-from" x-cloak>
+    <header class="td-bar">
+      <button class="td-round" @click="closeLayer('todo')" aria-label="Zurück"><span x-icon="'back'"></span></button>
+      <h2 id="td-title" class="td-brand">To-do</h2>
+      <span class="td-count" x-text="tdOpenList.length ? `${tdOpenList.length} offen` : ''"></span>
+    </header>
+
+    <div class="td-scroll">
+      <div class="td-perm" x-show="tdNeedsPerm" role="status">
+        <span x-icon="'bell-off'"></span>
+        <p x-text="tdPerm === 'denied' ? 'Benachrichtigungen sind blockiert – in den Website-Einstellungen von Chrome freigeben.' : 'Für Erinnerungen braucht die App die Erlaubnis für Benachrichtigungen.'"></p>
+        <button class="td-btn td-btn--small" x-show="tdPerm === 'default'" @click="tdAllow()">Erlauben</button>
+      </div>
+
+      <ul class="td-list" aria-label="Offene Aufgaben">
+        <template x-for="t in tdOpenList" :key="t.id">
+          <li class="td-item" :class="{ 'is-late': tdLate(t) }">
+            <button class="td-check" @click="tdToggle(t)" :aria-label="t.repeat ? `${t.title} erledigt (kommt wieder)` : `${t.title} erledigt`"><span x-icon="'check'"></span></button>
+            <button class="td-main" @click="tdEdit(t)">
+              <span class="td-name" x-text="t.title"></span>
+              <span class="td-meta" x-show="t.due || t.repeat">
+                <span class="td-due" x-show="t.due"><span x-icon="tdLate(t) ? 'warn' : 'clock'"></span><span x-text="tdDue(t)"></span></span>
+                <span class="td-rep" x-show="t.repeat" :title="t.repeat?.cron"><span x-icon="'repeat'"></span><span x-text="t.repeat?.label"></span></span>
+                <span class="td-bell" x-show="t.notify" aria-label="mit Erinnerung"><span x-icon="'bell'"></span></span>
+              </span>
+            </button>
+          </li>
+        </template>
+      </ul>
+
+      <div class="td-empty" x-show="!tdOpenList.length">
+        <svg viewBox="0 0 64 64" aria-hidden="true"><rect x="8" y="8" width="48" height="48" rx="12"/><path d="m20 33 8 8 16-17"/></svg>
+        <p>Alles erledigt. Unten eintippen, was ansteht.</p>
+      </div>
+
+      <details class="td-done" x-show="tdDoneList.length">
+        <summary><span x-text="`Erledigt (${tdDoneList.length})`"></span><span class="td-chev" x-icon="'chevron-down'"></span></summary>
+        <div class="td-done-body">
+          <ul class="td-list">
+            <template x-for="t in tdDoneList" :key="t.id">
+              <li class="td-item is-done">
+                <button class="td-check" aria-pressed="true" @click="tdToggle(t)" :aria-label="`${t.title} wieder öffnen`"><span x-icon="'check'"></span></button>
+                <button class="td-main" @click="tdEdit(t)"><span class="td-name" x-text="t.title"></span></button>
+              </li>
+            </template>
+          </ul>
+          <button class="td-link" @click="tdClearDone()"><span x-icon="'trash'"></span>Erledigte löschen</button>
+        </div>
+      </details>
+    </div>
+
+    <form class="td-composer" @submit.prevent="tdAdd()">
+      <label class="td-field">
+        <span class="sr-only">Neue Aufgabe</span>
+        <input type="text" x-model="tdInput" placeholder="Neue Aufgabe …" enterkeyhint="done" autocomplete="off" autocapitalize="sentences">
+      </label>
+      <button type="submit" class="td-add" :disabled="!tdInput.trim()" aria-label="Hinzufügen"><span x-icon="'plus'"></span></button>
+    </form>
+  </div>
+
+  <div class="td-scrim" x-show="isOpen('todo-edit')" x-transition.opacity x-cloak @click.self="closeLayer('todo-edit')" @keydown.escape="closeLayer('todo-edit')">
+    <div class="td-sheet" role="dialog" aria-modal="true" aria-labelledby="td-e-title" x-show="isOpen('todo-edit')" x-transition:enter="sheet-enter" x-transition:enter-start="td-sheet-from" x-transition:leave="sheet-leave" x-transition:leave-end="td-sheet-from">
+      <template x-if="tdForm">
+        <form @submit.prevent="tdSaveForm()">
+          <header class="td-sheet-head">
+            <h3 id="td-e-title">Aufgabe</h3>
+            <button type="button" class="td-round" @click="closeLayer('todo-edit')" aria-label="Schließen"><span x-icon="'x'"></span></button>
+          </header>
+          <label class="td-label">Was?
+            <input class="td-input" type="text" x-model="tdForm.title" required autocapitalize="sentences">
+          </label>
+
+          <fieldset class="td-set">
+            <legend class="td-label">Fällig</legend>
+            <div class="td-chips">
+              <button type="button" class="td-chip" @click="tdQuickDate(0)">Heute</button>
+              <button type="button" class="td-chip" @click="tdQuickDate(1)">Morgen</button>
+              <button type="button" class="td-chip" @click="tdQuickDate(tdNextWeekday)">Nächster Montag</button>
+              <button type="button" class="td-chip" x-show="tdForm.date" @click="tdForm.date = ''; tdForm.notify = false">Ohne Datum</button>
+            </div>
+            <div class="td-when">
+              <input class="td-input" type="date" x-model="tdForm.date" aria-label="Datum">
+              <input class="td-input td-input--time" type="time" x-model="tdForm.time" aria-label="Uhrzeit">
+            </div>
+          </fieldset>
+
+          <button type="button" class="td-switch" role="switch" :aria-checked="tdForm.notify" @click="tdToggleNotify()">
+            <span class="td-switch-track"></span>
+            <span x-icon="tdForm.notify ? 'bell-ring' : 'bell'"></span>
+            <span>Erinnern, wenn es fällig ist</span>
+          </button>
+          <p class="td-fine" x-show="tdForm.notify && tdPerm === 'denied'">Benachrichtigungen sind blockiert – in den Website-Einstellungen von Chrome freigeben.</p>
+          <p class="td-fine" x-show="tdForm.notify && tdPerm !== 'denied' && !tdPush">Kommt zuverlässig auch bei geschlossener App, wenn der Weckdienst eingerichtet ist (Aquarium-Helfer → Einstellungen).</p>
+
+          <fieldset class="td-set">
+            <legend class="td-label">Wiederholen</legend>
+            <div class="td-chips" role="radiogroup" aria-label="Wiederholen">
+              <template x-for="r in TD_REPEATS" :key="r.key">
+                <button type="button" class="td-chip" role="radio" :aria-checked="tdForm.kind === r.key" @click="tdForm.kind = r.key" x-text="r.label"></button>
+              </template>
+            </div>
+            <div class="td-custom" x-show="tdForm.kind === 'custom'">
+              <div class="td-ai-row">
+                <input class="td-input" type="text" x-model="tdForm.text" @keydown.enter.prevent="tdAiCron()" placeholder="z. B. jeden 2. Dienstag um 18 Uhr" aria-label="Wiederholung in eigenen Worten">
+                <button type="button" class="td-btn" @click="tdAiCron()" :disabled="!tdForm.text.trim() || tdAiBusy" aria-label="Mit KI übersetzen"><span :class="{ spin: tdAiBusy }" x-icon="tdAiBusy ? 'spinner' : 'sparkles'"></span></button>
+              </div>
+              <p class="td-fine is-error" x-show="tdAiError" x-text="tdAiError"></p>
+              <label class="td-label td-label--small">Cron (Minute Stunde Tag Monat Wochentag)
+                <input class="td-input td-input--mono" type="text" x-model="tdForm.cron" @input="tdForm.label = ''" placeholder="0 18 * * 2#2" spellcheck="false" autocapitalize="off">
+              </label>
+              <label class="td-label td-label--small" x-show="tdForm.weeks > 1">Nur jede n-te Woche
+                <input class="td-input td-input--time" type="number" min="1" max="8" x-model.number="tdForm.weeks">
+              </label>
+            </div>
+            <p class="td-rep-preview" x-show="tdFormRepeatText"><span x-icon="'repeat'"></span><span x-text="tdFormRepeatText"></span></p>
+          </fieldset>
+
+          <div class="td-sheet-actions">
+            <button type="button" class="td-btn td-btn--danger" @click="tdRemove()"><span x-icon="'trash'"></span>Löschen</button>
+            <button type="submit" class="td-btn td-btn--primary" :disabled="tdAiBusy"><span x-icon="'check'"></span>Speichern</button>
+          </div>
+        </form>
+      </template>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ WEIHNACHTSPLANER (eigene Komponente `xmas`) -->
+<div class="xm-root" x-data="xmas" @xmas-open.window="xmOpen()">
+  <div class="xm" role="dialog" aria-modal="true" aria-labelledby="xm-title" x-show="isOpen('xmas')" x-transition:enter="page-enter" x-transition:enter-start="page-from" x-transition:leave="page-leave" x-transition:leave-end="page-from" x-cloak>
+    <div class="xm-flakes" aria-hidden="true"></div>
+    <header class="xm-bar">
+      <button class="xm-round" @click="closeLayer('xmas')" aria-label="Zurück"><span x-icon="'back'"></span></button>
+      <h2 id="xm-title" class="xm-brand">Weihnachten</h2>
+    </header>
+    <div class="xm-tabs" role="tablist" aria-label="Bereich">
+      <button class="xm-tab" role="tab" id="xm-tab-advent" aria-controls="xm-panel-advent" :aria-selected="xmTab === 'advent'" @click="xmTab = 'advent'">Adventskalender</button>
+      <button class="xm-tab" role="tab" id="xm-tab-people" aria-controls="xm-panel-people" :aria-selected="xmTab === 'people'" @click="xmTab = 'people'">Geschenke</button>
+    </div>
+
+    <div class="xm-scroll" :class="{ 'is-dragging': xmDrag }">
+      <section id="xm-panel-advent" role="tabpanel" aria-labelledby="xm-tab-advent" x-show="xmTab === 'advent'">
+        <div class="xm-intro">
+          <label class="xm-for">Für
+            <input type="text" x-model="xm.advent.name" @change="xmSave()" placeholder="wen?" autocomplete="off" autocapitalize="words">
+          </label>
+          <p class="xm-tally">
+            <span class="xm-pill is-buy"><span x-icon="'basket'"></span><b x-text="xmAdventTally.buy"></b> besorgen</span>
+            <span class="xm-pill is-have"><span x-icon="'check'"></span><b x-text="xmAdventTally.have"></b> vorhanden</span>
+            <span class="xm-pill is-wrapped"><span x-icon="'gift'"></span><b x-text="xmAdventTally.wrapped"></b> verpackt</span>
+          </p>
+          <p class="xm-fine" x-text="xmEmptyDays ? `Noch ${xmEmptyDays} ${xmEmptyDays === 1 ? 'Türchen' : 'Türchen'} ohne Geschenk. Status antippen zum Weiterschalten, am Griff ziehen zum Umsortieren.` : 'Alle 24 Türchen sind belegt.'"></p>
+        </div>
+
+        <ol class="xm-doors">
+          <template x-for="d in XM_DAYS" :key="d">
+            <li class="xm-door" :data-xm-day="d" :class="{ 'is-today': xmToday === d + 1, 'is-target': xmDrop?.day === d && xmDrag, 'is-empty': !xm.advent.days[d].length }">
+              <div class="xm-door-head">
+                <span class="xm-num" x-text="d + 1"></span>
+                <button class="xm-plus" @click="xmStartAdd(d)" :aria-label="`Geschenk für Tag ${d + 1} hinzufügen`"><span x-icon="'plus'"></span></button>
+              </div>
+              <ul class="xm-gifts">
+                <template x-for="g in xm.advent.days[d]" :key="g.id">
+                  <li class="xm-gift" :data-xm-gift="g.id" :class="[xmDropClass(g, d), { 'is-lifted': xmDrag?.id === g.id }]">
+                    <span class="xm-grip" @pointerdown.prevent="xmDragStart($event, g)" aria-hidden="true"><span x-icon="'grip'"></span></span>
+                    <button class="xm-status" :class="`is-${g.status}`" @click="xmCycle(g, XM_ADVENT)" :aria-label="`${g.title}: ${xmStatus(g.status).label}. Weiter zu ${xmNextLabel(g, XM_ADVENT)}`" :title="xmStatus(g.status).label"><span x-icon="xmStatus(g.status).icon"></span></button>
+                    <button class="xm-gift-title" @click="xmEdit(g, d)" x-text="g.title"></button>
+                  </li>
+                </template>
+              </ul>
+              <form class="xm-add" x-show="xmAddDay === d" @submit.prevent="xmAddAdvent()">
+                <input type="text" :data-xm-add="d" x-model="xmAddText" @keydown.escape="xmAddDay = -1" @blur="setTimeout(() => { if (xmAddDay === d && !xmAddText.trim()) xmAddDay = -1 }, 150)" placeholder="Geschenk …" :aria-label="`Geschenk für Tag ${d + 1}`" enterkeyhint="done" autocomplete="off" autocapitalize="sentences">
+              </form>
+            </li>
+          </template>
+        </ol>
+      </section>
+
+      <section id="xm-panel-people" role="tabpanel" aria-labelledby="xm-tab-people" x-show="xmTab === 'people'">
+        <form class="xm-person-add" @submit.prevent="xmAddPerson()">
+          <input type="text" x-model="xmPersonName" placeholder="Person hinzufügen …" aria-label="Name der Person" autocomplete="off" autocapitalize="words" enterkeyhint="done">
+          <button type="submit" class="xm-round xm-round--gold" :disabled="!xmPersonName.trim()" aria-label="Person hinzufügen"><span x-icon="'plus'"></span></button>
+        </form>
+        <p class="xm-tally" x-show="xm.people.length">
+          <span class="xm-pill is-idea"><span x-icon="'idea'"></span><b x-text="xmPeopleTally.idea"></b> Ideen</span>
+          <span class="xm-pill is-buy"><span x-icon="'basket'"></span><b x-text="xmPeopleTally.buy"></b> besorgen</span>
+          <span class="xm-pill is-have"><span x-icon="'check'"></span><b x-text="xmPeopleTally.have"></b> vorhanden</span>
+          <span class="xm-pill is-wrapped"><span x-icon="'gift'"></span><b x-text="xmPeopleTally.wrapped"></b> verpackt</span>
+        </p>
+        <div class="xm-empty" x-show="!xm.people.length">
+          <span x-icon="'gift'"></span>
+          <p>Wen beschenkt ihr dieses Jahr? Oben eine Person anlegen, dann Geschenke sammeln.</p>
+        </div>
+        <div class="xm-people">
+          <template x-for="p in xm.people" :key="p.id">
+            <article class="xm-person">
+              <header class="xm-person-head">
+                <input class="xm-person-name" type="text" :value="p.name" @change="xmRenamePerson(p, $event.target.value)" @keydown.enter.prevent="$el.blur()" :aria-label="`Name: ${p.name}`" autocapitalize="words">
+                <button class="xm-icon" @click="xmRemovePerson(p)" :aria-label="`${p.name} entfernen`"><span x-icon="'trash'"></span></button>
+              </header>
+              <p class="xm-person-sum" x-text="xmPersonSummary(p)"></p>
+              <ul class="xm-list">
+                <template x-for="g in p.gifts" :key="g.id">
+                  <li class="xm-row">
+                    <button class="xm-badge" :class="`is-${g.status}`" @click="xmCycle(g, XM_GIFT)" :aria-label="`${g.title}: ${xmStatus(g.status).label}. Weiter zu ${xmNextLabel(g, XM_GIFT)}`"><span x-icon="xmStatus(g.status).icon"></span><span x-text="xmStatus(g.status).label"></span></button>
+                    <span class="xm-row-title" x-text="g.title"></span>
+                    <button class="xm-icon" @click="xmRemovePersonGift(p, g)" :aria-label="`${g.title} löschen`"><span x-icon="'x'"></span></button>
+                  </li>
+                </template>
+              </ul>
+              <form class="xm-row-add" @submit.prevent="xmAddPersonGift(p)">
+                <input type="text" x-model="xmGiftText[p.id]" :placeholder="`Geschenk für ${p.name} …`" :aria-label="`Neues Geschenk für ${p.name}`" autocomplete="off" autocapitalize="sentences" enterkeyhint="done">
+                <button type="submit" class="xm-icon" :disabled="!(xmGiftText[p.id] || '').trim()" aria-label="Geschenk hinzufügen"><span x-icon="'plus'"></span></button>
+              </form>
+            </article>
+          </template>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div class="xm-scrim" x-show="isOpen('xmas-gift')" x-transition.opacity x-cloak @click.self="closeLayer('xmas-gift')" @keydown.escape="closeLayer('xmas-gift')">
+    <div class="xm-sheet" role="dialog" aria-modal="true" aria-labelledby="xm-g-title" x-show="isOpen('xmas-gift')" x-transition:enter="sheet-enter" x-transition:enter-start="xm-sheet-from" x-transition:leave="sheet-leave" x-transition:leave-end="xm-sheet-from">
+      <template x-if="xmForm">
+        <form @submit.prevent="xmSaveGift()">
+          <header class="xm-sheet-head">
+            <h3 id="xm-g-title">Adventsgeschenk</h3>
+            <button type="button" class="xm-round" @click="closeLayer('xmas-gift')" aria-label="Schließen"><span x-icon="'x'"></span></button>
+          </header>
+          <label class="xm-label">Geschenk
+            <input class="xm-input" type="text" x-model="xmForm.title" required autocapitalize="sentences">
+          </label>
+          <label class="xm-label">Türchen
+            <select class="xm-input" x-model.number="xmForm.day">
+              <template x-for="d in XM_DAYS" :key="d"><option :value="d + 1" :selected="xmForm.day === d + 1" x-text="`${d + 1}. Dezember`"></option></template>
+            </select>
+          </label>
+          <fieldset class="xm-set">
+            <legend class="xm-label">Status</legend>
+            <div class="xm-seg" role="radiogroup" aria-label="Status">
+              <template x-for="s in XM_ADVENT" :key="s">
+                <button type="button" class="xm-badge" :class="`is-${s}`" role="radio" :aria-checked="xmForm.status === s" @click="xmForm.status = s"><span x-icon="xmStatus(s).icon"></span><span x-text="xmStatus(s).label"></span></button>
+              </template>
+            </div>
+          </fieldset>
+          <div class="xm-sheet-actions">
+            <button type="button" class="xm-btn xm-btn--danger" @click="xmRemoveGift()"><span x-icon="'trash'"></span>Löschen</button>
+            <button type="submit" class="xm-btn xm-btn--primary"><span x-icon="'check'"></span>Speichern</button>
+          </div>
+        </form>
+      </template>
     </div>
   </div>
 </div>

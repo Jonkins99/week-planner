@@ -6,7 +6,7 @@
 
 import {
   LEAGUES, DEFAULT_RULES, espn, matchWindow, readScoreboard, readSchedule, mergeGames, domesticLeague, goalStats,
-  readStandings, positionsFor, modelFor, scoreMatrix, bestTip, compLabel, isLeagueSlug, fmtAvg, pct,
+  readStandings, positionsFor, modelFor, scoreMatrix, bestTip, compLabel, isLeagueSlug, fmtAvg, pct, tierOf,
 } from './kick.mjs';
 import { KICK_SYSTEM, KICK_SCHEMA, KICK_BATCH, kickModels, kickPrompt, readKick, acceptKick } from './kick-ai.mjs';
 import { generateJson, QuotaBook, normalizeKeys } from '../gemini.mjs';
@@ -221,13 +221,15 @@ export function registerKick(Alpine) {
         const gA = tA?.games || [];
         const home = sideOf(m.home, gH, positionsFor(m, m.home.id, { tables, domestic: tH?.domestic }));
         const away = sideOf(m.away, gA, positionsFor(m, m.away.id, { tables, domestic: tA?.domestic }));
-        const sig = `${m.id}|${m.odds ? `${m.odds.home.toFixed(3)}${m.odds.draw.toFixed(3)}${m.odds.line}${m.odds.over?.toFixed(3)}` : `${gH.length}/${gA.length}/${gH[0]?.id}/${gA[0]?.id}`}`;
+        const tiers = { home: tierOf(tH?.domestic, m.league), away: tierOf(tA?.domestic, m.league) };
+        const ai = m.odds ? null : this.ktData.ai[m.id] || null;
+        const sig = `${m.id}|${m.odds ? `${m.odds.home.toFixed(3)}${m.odds.draw.toFixed(3)}${m.odds.line}${m.odds.over?.toFixed(3)}` : `${gH.length}/${gA.length}/${gH[0]?.id}/${gA[0]?.id}/${tiers.home}/${tiers.away}/${ai?.at || ''}`}`;
         let model = fits.get(sig);
         if (!model) {
-          model = modelFor(m, home.stats, away.stats, rules);
+          model = modelFor(m, home.stats, away.stats, rules, { tiers, ai });
           fits.set(sig, model);
         } else if (model) {
-          model = { ...model, tip: bestTip(scoreMatrix(model.lh, model.la), rules) };
+          model = { ...model, tip: bestTip(scoreMatrix(model.lh, model.la), rules, model.only) };
         }
         const d = new Date(m.at);
         const hm = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
@@ -252,6 +254,7 @@ export function registerKick(Alpine) {
           ep: model?.tip ? model.tip.ep.toFixed(1).replace('.', ',') : '',
           xg: model ? `${fmtAvg(model.lh)} : ${fmtAvg(model.la)}` : '',
           raw: m,
+          tiers,
           sides: { home: gH, away: gA },
         };
       });
@@ -358,7 +361,7 @@ export function registerKick(Alpine) {
             keys, models: kickModels(), quota,
             system: KICK_SYSTEM, schema: KICK_SCHEMA,
             prompt: kickPrompt(part.map((c) => ({
-              match: c.raw, model: c.model,
+              match: c.raw, model: c.model?.source === 'ai' ? null : c.model, tiers: c.tiers,
               home: { pos: c.home.pos, games: c.sides.home, stats: c.home.stats },
               away: { pos: c.away.pos, games: c.sides.away, stats: c.away.stats },
             }))),
@@ -372,6 +375,7 @@ export function registerKick(Alpine) {
           for (const [id, v] of Object.entries(got)) ai[id] = { ...v, at: Date.now(), model: used };
           this.ktData.ai = ai;
           this.ktSave();
+          this.ktBuild();
         }
       } catch (e) {
         this._ktAiFailed = Date.now();

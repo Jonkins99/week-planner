@@ -1,4 +1,6 @@
-// Benachrichtigungen der Werkzeuge (derzeit: Aquarium-Erinnerungen).
+// Benachrichtigungen der Werkzeuge (Aquarium-Erinnerungen, To-dos).
+// Jedes Werkzeug ist eine Quelle (`src`): Plan und Weckzeiten werden je Quelle ersetzt, die
+// der anderen bleiben erhalten. Schlüssel der To-dos beginnen mit „todo:“.
 //
 // Eine Web-App kann ohne eigenen Server keine Meldung zu einer festen Uhrzeit „vorbestellen".
 // Deshalb drei Wege, die sich ergänzen:
@@ -57,12 +59,13 @@ export async function showNotification(p) {
   }
 }
 
-/** Plan für den Service Worker ablegen (fertige Texte, damit er nichts rechnen muss). */
-export async function writeSchedule(list) {
+/** Plan einer Quelle für den Service Worker ablegen (fertige Texte, damit er nichts rechnen muss). */
+export async function writeSchedule(list, src = 'aqua') {
   try {
-    // Eine laufende Probe des Weckdienstes bleibt erhalten.
-    const probe = (((await idbGet('kv', 'aqua-schedule')) || {}).list || []).filter((x) => x.kind === 'test' && x.at > Date.now() - 300000);
-    await idbSet('kv', 'aqua-schedule', { at: Date.now(), list: [...list, ...probe] });
+    // Pläne anderer Werkzeuge und eine laufende Probe des Weckdienstes bleiben erhalten.
+    const keep = (((await idbGet('kv', 'aqua-schedule')) || {}).list || [])
+      .filter((x) => (x.kind === 'test' ? x.at > Date.now() - 300000 : (x.src || 'aqua') !== src));
+    await idbSet('kv', 'aqua-schedule', { at: Date.now(), list: [...list.map((x) => ({ ...x, src })), ...keep] });
   } catch { /* ohne Plan nur Takt in der App */ }
 }
 
@@ -80,8 +83,8 @@ export async function registerPeriodic() {
   }
 }
 
-/** Antworten aus Benachrichtigungen abholen: [{ key, action, at }]. */
-export const takeAnswers = () => drainInbox();
+/** Antworten aus Benachrichtigungen abholen: [{ key, action, at }], nur die zum Schlüssel passenden. */
+export const takeAnswers = (match = () => true) => drainInbox((a) => match(String(a?.key || '')));
 
 /** Nachrichten des Service Workers (Antwort auf eine Benachrichtigung bei offener App). */
 export function onWorkerMessage(fn) {
@@ -97,6 +100,7 @@ export function onWorkerMessage(fn) {
 // Der schickt zur Zeit einen leeren Push, der Service Worker zeigt dann die Meldung.
 
 const PUSH_TIMES = 'wp-push-times-v1';
+const PUSH_SOURCES = 'wp-push-src-v1';
 
 export const pushSupported = () => typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window;
 
@@ -156,11 +160,15 @@ export async function disablePush() {
   await idbSet('kv', 'push-config', null);
 }
 
-/** Weckzeiten übermitteln (nur, wenn sie sich geändert haben). */
-export async function syncWakeTimes(times) {
+/** Weckzeiten einer Quelle übermitteln; der Dienst bekommt alle Quellen zusammen (nur bei Änderung). */
+export async function syncWakeTimes(times, src = 'aqua') {
+  let all = {};
+  try { all = JSON.parse(localStorage.getItem(PUSH_SOURCES) || '{}') || {}; } catch { /* leer */ }
+  all[src] = times.filter((t) => t > Date.now() - 60000);
+  try { localStorage.setItem(PUSH_SOURCES, JSON.stringify(all)); } catch { /* egal */ }
   const cfg = await pushConfig();
   if (!cfg) return false;
-  const list = [...new Set(times.filter((t) => t > Date.now() - 60000))].sort((a, b) => a - b);
+  const list = [...new Set(Object.values(all).flat().filter((t) => t > Date.now() - 60000))].sort((a, b) => a - b);
   const sig = `${cfg.id}|${list.join(',')}`;
   let last = '';
   try { last = localStorage.getItem(PUSH_TIMES) || ''; } catch { /* egal */ }

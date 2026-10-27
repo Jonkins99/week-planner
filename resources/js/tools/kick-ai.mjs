@@ -3,7 +3,7 @@
 // Ergebnisse mit grober Prozent-Chance. Mehrere Spiele gehen in einer Anfrage raus.
 
 import { modelChain, schemaOf, S } from '../gemini.mjs';
-import { LEAGUES, compLabel, fmtAvg, pct } from './kick.mjs';
+import { LEAGUES, compLabel, fmtAvg, pct, tierText } from './kick.mjs';
 
 export const KICK_MODEL = 'gemini-3.8-flash';
 export const kickModels = () => modelChain(KICK_MODEL);
@@ -12,7 +12,10 @@ export const KICK_BATCH = 10;
 export const KICK_SYSTEM = `Du bist ein nüchterner Fußball-Analyst und hilfst beim Tippspiel (Kicktipp).
 Du bekommst für mehrere Spiele: Wettbewerb, Heim- und Auswärtsteam, Tabellenplätze, die letzten Pflichtspiele beider Teams (aus Sicht des Teams: S/U/N, eigene Tore zuerst, H = Heim, A = auswärts), Torschnitte, Wettquoten (Wahrscheinlichkeiten ohne Marge) und ein Poisson-Modell.
 Schätze für jedes Spiel die drei wahrscheinlichsten Endergebnisse nach 90 Minuten mit ungefährer Wahrscheinlichkeit in Prozent (ganze Zahlen, realistisch: einzelne Ergebnisse liegen fast immer zwischen 5 und 20 Prozent).
-Die Quoten sind die beste Grundlage; weiche nur ab, wenn Form, Torschnitte oder die Lage (Pokal, Rotation, Auswärtsschwäche) klar dafür sprechen. Dein eigenes Wissen über Kader und Verletzungen darfst du vorsichtig einbeziehen.
+Die Quoten sind die beste Grundlage; weiche nur ab, wenn Form, Torschnitte oder die Lage (Pokal, Rotation, Auswärtsschwäche) klar dafür sprechen. Dein eigenes Wissen über Kader, Klasse und Verletzungen darfst du einbeziehen.
+Ohne Quoten zählt zuerst die Spielklasse: Torschnitte und Form entstehen gegen Gegner der eigenen Liga und sind über Ligagrenzen hinweg NICHT vergleichbar. Ein Bundesligist ist gegen Dritt- oder Viertligisten fast immer klarer Favorit (Sieg meist 65–85 %), auch auswärts; Ergebnisse wie 0:2, 1:3, 0:3 oder 1:2 für den Höherklassigen sind dann typisch. Ein Sieg des Unterklassigen gehört höchstens mit kleiner Prozentzahl auf Platz 3.
+Die Ergebnisse sind immer Heimteam:Auswärtsteam (das zuerst genannte Team ist das Heimteam).
+Wähle nicht reflexhaft 2:1 oder 1:2: richte die Ergebnisse an den erwarteten Toren aus (bei klarem Favoriten eher 0:2/2:0 oder 3:1/1:3, bei torarmen Spielen 1:0/0:1/1:1).
 note: ein kurzer deutscher Satz (höchstens 70 Zeichen) mit dem wichtigsten Grund, ohne Floskeln.
 Gib für jedes Spiel genau die id aus der Eingabe zurück.`;
 
@@ -40,6 +43,7 @@ export function kickMatchText(c) {
   const lines = [
     `### id ${m.id}: ${m.home.full || m.home.name} – ${m.away.full || m.away.name}`,
     `${lg?.label || ''}${(m.league === 'cl' || m.league === 'dfb') && m.phase ? ` (${m.phase})` : ''}, ${when}`,
+    `Spielklasse: ${m.home.name} ${tierText(c.tiers?.home)} | ${m.away.name} ${tierText(c.tiers?.away)}`,
     `Plätze: ${m.home.name} ${posText(c.home.pos)} | ${m.away.name} ${posText(c.away.pos)}`,
     `Form ${m.home.name}: ${formText(c.home.games)}`,
     `Form ${m.away.name}: ${formText(c.away.games)}`,
@@ -47,7 +51,7 @@ export function kickMatchText(c) {
   ];
   if (m.odds) lines.push(`Quoten: Heimsieg ${pct(m.odds.home)}, Remis ${pct(m.odds.draw)}, Auswärtssieg ${pct(m.odds.away)}${m.odds.line != null ? `, über ${m.odds.line} Tore ${pct(m.odds.over)}` : ''}`);
   else lines.push('Quoten: keine');
-  if (c.model) lines.push(`Poisson-Modell: erwartete Tore ${c.model.lh.toFixed(2)} : ${c.model.la.toFixed(2)}, häufigste Ergebnisse ${c.model.top.map((t) => `${t.h}:${t.a} ${pct(t.p)}`).join(', ')}`);
+  if (c.model) lines.push(`Poisson-Modell (${c.model.source === 'odds' ? 'aus den Quoten' : 'grob aus Torschnitten und Spielklasse'}): erwartete Tore ${c.model.lh.toFixed(2)} : ${c.model.la.toFixed(2)}, häufigste Ergebnisse ${c.model.top.map((t) => `${t.h}:${t.a} ${pct(t.p)}`).join(', ')}`);
   return lines.join('\n');
 }
 

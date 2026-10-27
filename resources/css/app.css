@@ -4851,6 +4851,105 @@
   .todo-line:nth-child(3) svg path,
   .todo-line:nth-child(3) i { animation-delay: 2s; }
 
+  .tile--xmas {
+    background:
+      radial-gradient(90% 70% at 80% 0%, rgb(255 214 140 / 0.3), transparent 65%),
+      linear-gradient(170deg, #8e1b25 0%, #5c0f19 100%);
+    box-shadow: inset 0 0 0 2px rgb(233 190 110 / 0.45);
+  }
+
+  .xmas-scene {
+    position: absolute;
+    inset: 0;
+  }
+
+  .xmas-snow {
+    position: absolute;
+    top: -8px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #fff8ec;
+    opacity: 0.9;
+    animation: xmas-fall 5.4s linear infinite;
+  }
+
+  .xmas-snow:nth-child(1) { left: 12%; }
+  .xmas-snow:nth-child(2) { left: 30%; width: 4px; height: 4px; animation-delay: -1.8s; animation-duration: 6.4s; }
+  .xmas-snow:nth-child(3) { left: 48%; animation-delay: -3.6s; }
+  .xmas-snow:nth-child(4) { left: 66%; width: 4px; height: 4px; animation-delay: -0.9s; animation-duration: 7s; }
+  .xmas-snow:nth-child(5) { left: 82%; animation-delay: -4.4s; animation-duration: 6s; }
+  .xmas-snow:nth-child(6) { left: 92%; width: 3px; height: 3px; animation-delay: -2.6s; }
+
+  .xmas-hill {
+    position: absolute;
+    left: -10%;
+    right: -10%;
+    bottom: -14%;
+    height: 50%;
+    border-radius: 50% 50% 0 0;
+    background: #f6eee0;
+  }
+
+  .xmas-gift {
+    position: absolute;
+    z-index: 1;
+    left: 50%;
+    bottom: 34%;
+    width: 46px;
+    margin-left: -23px;
+  }
+
+  .xmas-box {
+    display: block;
+    height: 34px;
+    border-radius: 3px 3px 5px 5px;
+    background:
+      linear-gradient(90deg, transparent 19px, #e9be6e 19px 27px, transparent 27px),
+      #1f5c3a;
+  }
+
+  .xmas-lid {
+    position: relative;
+    display: block;
+    height: 11px;
+    margin: 0 -4px 1px;
+    border-radius: 3px;
+    background:
+      linear-gradient(90deg, transparent 23px, #e9be6e 23px 31px, transparent 31px),
+      #27704a;
+    transform-origin: 8% 100%;
+    animation: xmas-lid 4.2s var(--ease-out) infinite;
+  }
+
+  .xmas-lid::before,
+  .xmas-lid::after {
+    content: "";
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    width: 13px;
+    height: 10px;
+    border: 3px solid #e9be6e;
+    border-radius: 50% 50% 0 50%;
+  }
+
+  .xmas-lid::before {
+    margin-left: -14px;
+    transform: rotate(10deg);
+  }
+
+  .xmas-lid::after {
+    margin-left: 1px;
+    border-radius: 50% 50% 50% 0;
+    transform: rotate(-10deg);
+  }
+
+  .tile--xmas .tile-label {
+    color: #5c0f19;
+    hyphens: manual;
+  }
+
   .tile--swipe {
     background: linear-gradient(150deg, #ff5f6d 0%, #c2185b 100%);
   }
@@ -4992,80 +5091,6 @@
 
   .tile--kick .tile-label {
     text-shadow: 0 1px 6px rgb(0 0 0 / 0.45);
-  }
-
-  .tile--sleep {
-    background: linear-gradient(180deg, #2b2a6b 0%, #6a4fa3 70%, #b48bd6 100%);
-  }
-
-  .sleep-sky {
-    position: absolute;
-    inset: 0;
-  }
-
-  .sleep-moon {
-    position: absolute;
-    top: 14px;
-    right: 18px;
-    width: 26px;
-    height: 26px;
-    border-radius: 50%;
-    box-shadow: inset -7px 3px 0 0 #fff4c2;
-    transform: rotate(-20deg);
-  }
-
-  .sleep-star {
-    position: absolute;
-    width: 4px;
-    height: 4px;
-    border-radius: 50%;
-    background: #fff;
-    animation: twinkle 3s ease-in-out infinite;
-  }
-
-  .sleep-star:nth-of-type(1) { top: 18%; left: 18%; }
-  .sleep-star:nth-of-type(2) { top: 32%; left: 46%; animation-delay: -1s; }
-  .sleep-star:nth-of-type(3) { top: 12%; left: 62%; animation-delay: -2s; }
-
-  .sleep-blob {
-    position: absolute;
-    left: 50%;
-    bottom: 30%;
-    width: 58px;
-    height: 44px;
-    margin-left: -29px;
-    border-radius: 50% 50% 44% 44% / 60% 60% 40% 40%;
-    background: #f2d7ff;
-    transform-origin: bottom;
-    animation: breathe 3.6s ease-in-out infinite;
-  }
-
-  .sleep-blob i {
-    position: absolute;
-    top: 46%;
-    width: 11px;
-    height: 6px;
-    border-bottom: 2px solid #4a3a72;
-    border-radius: 0 0 50% 50%;
-  }
-
-  .sleep-blob i:first-child { left: 13px; }
-  .sleep-blob i:last-child { right: 13px; }
-
-  .sleep-z {
-    position: absolute;
-    left: 62%;
-    bottom: 50%;
-    font-size: 0.9rem;
-    font-weight: 800;
-    color: #fff;
-    opacity: 0;
-    animation: zzz 3.6s ease-out infinite;
-  }
-
-  .sleep-z + .sleep-z {
-    animation-delay: 1.8s;
-    font-size: 0.7rem;
   }
 
   .wrapped {
@@ -6087,6 +6112,28 @@
   }
 }
 
+@keyframes xmas-fall {
+  to {
+    top: 100%;
+    transform: translateX(-10px);
+  }
+}
+
+@keyframes xmas-lid {
+  0%, 62%, 100% {
+    transform: none;
+  }
+  70% {
+    transform: translateY(-7px) rotate(-14deg);
+  }
+  78% {
+    transform: translateY(-3px) rotate(-6deg);
+  }
+  86% {
+    transform: none;
+  }
+}
+
 @keyframes todo-strike {
   0%, 12% {
     background: #c9cfdc;
@@ -6192,26 +6239,6 @@
   50% {
     opacity: 0.25;
     transform: scale(0.6);
-  }
-}
-
-@keyframes breathe {
-  50% {
-    transform: scale(1.06, 0.95);
-  }
-}
-
-@keyframes zzz {
-  0% {
-    opacity: 0;
-    transform: translate(0, 0) scale(0.7);
-  }
-  25% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-    transform: translate(16px, -30px) scale(1.2);
   }
 }
 

@@ -112,6 +112,7 @@ export function registerAqua(Alpine) {
       this.loadPhotos();
       window.addEventListener('wp-layer-closed', (e) => this.layerClosed(e.detail));
       onWorkerMessage((msg) => {
+        if (String(msg.key || '').startsWith('todo:')) return;
         if (msg.type === 'tool-answer') this.answer(msg.key, msg.action, { fromNotification: true });
         if (msg.type === 'tool-open') this.openFromNotification(msg.key);
       });
@@ -753,7 +754,7 @@ export function registerAqua(Alpine) {
     },
 
     async tick() {
-      for (const a of await takeAnswers()) this.answer(a.key, a.action, { fromNotification: true, at: a.at });
+      for (const a of await takeAnswers((k) => !k.startsWith('todo:'))) this.answer(a.key, a.action, { fromNotification: true, at: a.at });
       this._ticked = true;
       const due = dueReminders(this.d);
       const shown = readJson(SHOWN, {}) || {};

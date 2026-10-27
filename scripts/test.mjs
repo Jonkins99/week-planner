@@ -30,9 +30,12 @@ import { cleanTimes, splitDue, deviceStatus } from '../push-server/worker.js';
 import { diagnosePush } from '../resources/js/tools/notify.mjs';
 import {
   americanToProb, readOdds, readEvent, readSchedule, goalStats, domesticLeague, readStandings, positionsFor, fitLambdas,
-  scoreMatrix, outcomeOf, pointsFor as kickPoints, bestTip, matchWindow, deName, LEAGUES,
+  scoreMatrix, outcomeOf, pointsFor as kickPoints, bestTip, matchWindow, deName, LEAGUES, modelFor, tierOf,
 } from '../resources/js/tools/kick.mjs';
 import { readKick, acceptKick } from '../resources/js/tools/kick-ai.mjs';
+import { parseCron, cronNext, presetCron, buildRepeat, completeTodo, sanitizeTodo, addTodo, emptyTodo, upcomingTodo, dueTodo, openTodos } from '../resources/js/tools/todo.mjs';
+import { readCron } from '../resources/js/tools/todo-ai.mjs';
+import { emptyXmas, sanitizeXmas, moveGift, nextStatus, ADVENT_FLOW, GIFT_FLOW, tally, adventToday } from '../resources/js/tools/xmas.mjs';
 import { categorize, scoreFile, rankCandidates, keepKey, rankOf, pointsFor, findDupes, skipDir } from '../resources/js/tools/sorter.mjs';
 
 let failed = 0;
@@ -594,6 +597,107 @@ test('Kicktipp: KI-Antwort säubern', () => {
   assert.deepEqual(r['11'].tips, [{ h: 2, a: 1, pct: 15 }, { h: 1, a: 1, pct: 12 }, { h: 0, a: 0, pct: 8 }]);
   assert.equal(acceptKick(['11', '12'])(data), true);
   assert.equal(acceptKick(['11', '12', '13'])(data), false);
+});
+
+test('Kicktipp: Spielklasse und KI im Modell ohne Quoten', () => {
+  assert.equal(tierOf('ger.1', 'dfb'), 1);
+  assert.equal(tierOf(null, 'dfb'), 3.5);
+  assert.equal(tierOf(null, 'bl1'), null);
+  // Unterklassiger mit starker Form gegen Bundesligist: ohne Klasse läge er vorn.
+  const strong = { 5: { gf: 2.4, ga: 0.8 }, 10: { gf: 2.4, ga: 0.8 } };
+  const pro = { 5: { gf: 1.8, ga: 1.2 }, 10: { gf: 1.8, ga: 1.2 } };
+  const flat = modelFor({ odds: null }, strong, pro);
+  const tiered = modelFor({ odds: null }, strong, pro, undefined, { tiers: { home: 3.5, away: 1 } });
+  assert.ok(flat.tip.h > flat.tip.a);
+  assert.ok(tiered.away > tiered.home);
+  assert.ok(tiered.tip.a > tiered.tip.h);
+  // KI-Einschätzung: Tipp nur unter den genannten Ergebnissen.
+  const ai = modelFor({ odds: null }, strong, pro, undefined, { ai: { tips: [{ h: 0, a: 2, pct: 14 }, { h: 1, a: 2, pct: 11 }, { h: 0, a: 3, pct: 9 }] } });
+  assert.equal(ai.source, 'ai');
+  assert.ok(['0:2', '1:2', '0:3'].includes(`${ai.tip.h}:${ai.tip.a}`));
+  // Mit Quoten bleiben die Quoten maßgeblich.
+  const odds = modelFor({ odds: { home: 0.6, draw: 0.22, away: 0.18, line: null, over: null } }, null, null, undefined, { ai: { tips: [{ h: 0, a: 2, pct: 20 }] } });
+  assert.equal(odds.source, 'odds');
+});
+
+test('To-do: Cron lesen und nächster Termin', () => {
+  assert.equal(parseCron('0 18 * *'), null);
+  assert.equal(parseCron('61 1 * * *'), null);
+  assert.ok(parseCron('*/15 8-18 1,15 * 1-5'));
+  const at = new Date(2026, 9, 27, 10, 0).getTime(); // Di 27.10.2026
+  assert.equal(new Date(cronNext('0 9 * * *', at)).getDate(), 28);
+  assert.equal(cronNext('30 18 * * 2', at), new Date(2026, 9, 27, 18, 30).getTime());
+  assert.equal(cronNext('0 18 * * 2#2', at), new Date(2026, 10, 10, 18, 0).getTime());
+  assert.equal(cronNext('0 8 * * 5L', at), new Date(2026, 9, 30, 8, 0).getTime());
+  assert.equal(cronNext('0 7 L * *', at), new Date(2026, 9, 31, 7, 0).getTime());
+  assert.equal(cronNext('0 12 1 1 *', at), new Date(2027, 0, 1, 12, 0).getTime());
+  // Alle 2 Wochen montags ab dem 26.10.: nächster ist der 9.11.
+  const anchor = new Date(2026, 9, 26, 7, 0).getTime();
+  assert.equal(cronNext('0 7 * * 1', at, { weeks: 2, anchor }), new Date(2026, 10, 9, 7, 0).getTime());
+  assert.equal(presetCron('weekly', at), '0 10 * * 2');
+  assert.equal(presetCron('monthly', new Date(2026, 0, 31, 9, 0).getTime()), '0 9 L * *');
+});
+
+test('To-do: Abhaken, Wiederholung und Erinnerungen', () => {
+  const s = emptyTodo();
+  const a = addTodo(s, '  Müll rausbringen ');
+  assert.equal(a.title, 'Müll rausbringen');
+  assert.equal(addTodo(s, '   '), null);
+  const due = new Date(2026, 9, 27, 18, 0).getTime();
+  a.due = due;
+  a.notify = true;
+  a.repeat = buildRepeat('weekly', due);
+  assert.equal(a.repeat.label, 'Jeden Dienstag um 18:00');
+  assert.equal(completeTodo(a, due + 1000), 'next');
+  assert.equal(a.due, new Date(2026, 10, 3, 18, 0).getTime());
+  assert.equal(a.done, 0);
+  const b = addTodo(s, 'Einmalig');
+  assert.equal(completeTodo(b, due), 'done');
+  assert.ok(b.done);
+  assert.deepEqual(openTodos(s).map((x) => x.title), ['Müll rausbringen']);
+  const up = upcomingTodo(s, due, 14);
+  assert.equal(up.length, 1);
+  assert.equal(up[0].key, `todo:${a.id}:${a.due}`);
+  assert.equal(dueTodo(s, due).length, 0);
+  assert.equal(dueTodo(s, a.due + 1).length, 1);
+  a.snooze = a.due + 3600000;
+  assert.equal(dueTodo(s, a.due + 1).length, 0);
+  const clean = sanitizeTodo({ items: [{ title: 'x', repeat: { cron: 'kaputt' }, notify: true }, { title: '' }] });
+  assert.equal(clean.items.length, 1);
+  assert.equal(clean.items[0].repeat, null);
+  assert.equal(clean.items[0].notify, false);
+  assert.deepEqual(readCron({ cron: ' 0  18 * * 2#2 ', weeks: 1, label: 'Jeden 2. Dienstag', ok: true }), { cron: '0 18 * * 2#2', weeks: 1, label: 'Jeden 2. Dienstag' });
+  assert.equal(readCron({ cron: 'alle zwei', weeks: 1, label: '', ok: true }), null);
+  assert.equal(readCron({ cron: '', ok: false }), null);
+});
+
+test('Weihnachtsplaner: Status, Verschieben, Bereinigen', () => {
+  assert.equal(nextStatus('buy', ADVENT_FLOW), 'have');
+  assert.equal(nextStatus('wrapped', ADVENT_FLOW), 'buy');
+  assert.equal(nextStatus('wrapped', GIFT_FLOW), 'idea');
+  const x = emptyXmas();
+  assert.equal(x.advent.days.length, 24);
+  const g = (id) => ({ id, title: id, status: 'buy' });
+  x.advent.days[0] = [g('a'), g('b'), g('c')];
+  x.advent.days[5] = [g('d')];
+  moveGift(x.advent.days, 'a', 0, 3);
+  assert.deepEqual(x.advent.days[0].map((v) => v.id), ['b', 'c', 'a']);
+  moveGift(x.advent.days, 'a', 0, 0);
+  assert.deepEqual(x.advent.days[0].map((v) => v.id), ['a', 'b', 'c']);
+  moveGift(x.advent.days, 'b', 5, 0);
+  assert.deepEqual(x.advent.days[0].map((v) => v.id), ['a', 'c']);
+  assert.deepEqual(x.advent.days[5].map((v) => v.id), ['b', 'd']);
+  moveGift(x.advent.days, 'c', 5);
+  assert.deepEqual(x.advent.days[5].map((v) => v.id), ['b', 'd', 'c']);
+  const clean = sanitizeXmas({ advent: { name: 'Elika', days: [[{ title: 'Tee', status: 'idea' }, { title: '' }]] }, people: [{ name: 'Oma', gifts: [{ title: 'Schal', status: 'have' }] }, { name: ' ' }] });
+  assert.equal(clean.advent.days[0][0].status, 'buy');
+  assert.equal(clean.advent.days[0].length, 1);
+  assert.equal(clean.advent.days.length, 24);
+  assert.equal(clean.people.length, 1);
+  assert.equal(tally(clean.people[0].gifts).have, 1);
+  assert.equal(adventToday(new Date(2026, 11, 6).getTime()), 6);
+  assert.equal(adventToday(new Date(2026, 11, 25).getTime()), 0);
+  assert.equal(adventToday(new Date(2026, 10, 6).getTime()), 0);
 });
 
 await Promise.all(pending);

@@ -3,7 +3,7 @@
 // Gebaute Dateien (gehashte Namen) und Schriften: aus dem Cache, im Hintergrund erneuert.
 // Fremde Hosts (Gemini, YouTube, Instagram) laufen unberührt am Cache vorbei.
 
-const CACHE = 'week-planner-v8';
+const CACHE = 'week-planner-v9';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(['./', './index.html'])).catch(() => {}));
@@ -51,7 +51,7 @@ self.addEventListener('fetch', (event) => {
 
 // ------------------------------------------------------------ Erinnerungen der Werkzeuge
 // Die App legt den Plan der nächsten Tage mit fertigen Texten in IndexedDB (`wp-tools`, kv
-// „aqua-schedule"). Hier wird er beim Hintergrund-Abgleich gelesen; Antworten aus den
+// „aqua-schedule", Einträge von Aquarium und To-do-Liste, je mit `src`). Hier wird er beim Hintergrund-Abgleich gelesen; Antworten aus den
 // Knöpfen einer Benachrichtigung landen in der Inbox, die App übernimmt sie beim Öffnen.
 
 function toolsDb() {
@@ -88,7 +88,7 @@ function notifyOptions(item) {
     icon: './icons/icon-192.png',
     badge: './icons/favicon-48.png',
     vibrate: level >= 2 ? [400, 120, 400, 120, 800] : level === 1 ? [300, 100, 300] : [180],
-    data: { key: item.key, url: './?tool=aqua' },
+    data: { key: item.key, url: item.url || './?tool=aqua' },
     actions: item.actions || [],
   };
 }
@@ -114,7 +114,7 @@ async function showDueReminders({ fallback = false } = {}) {
   if (!count && fallback) {
     const open = await self.registration.getNotifications();
     if (!open.length) {
-      await self.registration.showNotification('Aquarium', { body: 'Alles erledigt.', tag: 'aqua-idle', silent: true, icon: './icons/icon-192.png' });
+      await self.registration.showNotification('Week Planner', { body: 'Alles erledigt.', tag: 'aqua-idle', silent: true, icon: './icons/icon-192.png' });
       setTimeout(() => self.registration.getNotifications({ tag: 'aqua-idle' }).then((ns) => ns.forEach((n) => n.close())), 3000);
     }
   }

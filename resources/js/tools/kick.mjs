@@ -313,15 +313,50 @@ export function fitLambdas(odds) {
   return { lh: best.lh, la: best.la };
 }
 
-/** Ohne Quoten: erwartete Tore aus den Torschnitten der letzten 10 Spiele (mit Heimvorteil). */
-export function lambdasFromForm(homeStats, awayStats) {
-  const hs = homeStats?.[10] || homeStats?.[5];
-  const as = awayStats?.[10] || awayStats?.[5];
+/** Spielklasse eines Vereins (1 = erste Liga). Ohne bekannte Liga im DFB-Pokal: 3. Liga oder tiefer. */
+export function tierOf(domestic, league = null) {
+  const m = /^[a-z]{3}\.(\d)$/.exec(String(domestic || ''));
+  if (m) return Number(m[1]);
+  return league === 'dfb' ? 3.5 : null;
+}
+
+export const tierText = (t) => (t == null ? 'unbekannt' : t === 3.5 ? '3. Liga oder tiefer (Amateure)' : `${t}. Liga`);
+
+// Je Spielklasse Unterschied verliert der Unterklassige gut ein Sechstel seiner Tore, der
+// Höherklassige legt entsprechend zu. Torschnitte entstehen ja gegen die eigene Liga.
+const TIER_STEP = 0.82;
+
+/** Ohne Quoten: erwartete Tore aus den Torschnitten der letzten 10 Spiele (mit Heimvorteil und Klassenunterschied). */
+export function lambdasFromForm(homeStats, awayStats, tiers = {}) {
+  // Ohne bekannte Liga stammen die Spiele meist aus dem Pokal gegen Höherklassige: nicht aussagekräftig.
+  const hs = tiers.home === 3.5 ? null : homeStats?.[10] || homeStats?.[5];
+  const as = tiers.away === 3.5 ? null : awayStats?.[10] || awayStats?.[5];
   const base = (x, fb) => (x != null ? x : fb);
-  const lh = (base(hs?.gf, 1.4) + base(as?.ga, 1.4)) / 2 * 1.08;
-  const la = (base(as?.gf, 1.15) + base(hs?.ga, 1.15)) / 2 * 0.92;
+  let lh = (base(hs?.gf, 1.4) + base(as?.ga, 1.4)) / 2 * 1.08;
+  let la = (base(as?.gf, 1.15) + base(hs?.ga, 1.15)) / 2 * 0.92;
+  if (tiers.home != null && tiers.away != null) {
+    const f = TIER_STEP ** (tiers.home - tiers.away);
+    lh *= f;
+    la /= f;
+  }
   const clamp = (v) => Math.min(4, Math.max(0.2, v));
   return { lh: clamp(lh), la: clamp(la) };
+}
+
+/** Erwartete Tore so wählen, dass das Modell genannte Ergebnis-Wahrscheinlichkeiten (KI) möglichst trifft. */
+export function fitScores(tips) {
+  const rows = GRID.map(poissonRow);
+  let best = null;
+  for (let i = 0; i < GRID.length; i++) {
+    for (let j = 0; j < GRID.length; j++) {
+      let sum = 0;
+      for (let h = 0; h <= MAX_GOALS; h++) for (let a = 0; a <= MAX_GOALS; a++) sum += rows[i][h] * rows[j][a];
+      let err = 0;
+      for (const t of tips) err += (rows[i][t.h] * rows[j][t.a] / sum - t.pct / 100) ** 2;
+      if (!best || err < best.err) best = { lh: GRID[i], la: GRID[j], err };
+    }
+  }
+  return { lh: best.lh, la: best.la };
 }
 
 /** Kicktipp-Punkte eines Tipps bei einem Ergebnis (Tordifferenz zählt nicht bei Unentschieden). */
@@ -341,14 +376,13 @@ export function expectedPoints(m, tip, rules = DEFAULT_RULES) {
   return ep;
 }
 
-/** Der Tipp mit den meisten erwarteten Punkten: { h, a, ep }. */
-export function bestTip(m, rules = DEFAULT_RULES) {
+/** Der Tipp mit den meisten erwarteten Punkten: { h, a, ep }. Optional nur aus vorgegebenen Ergebnissen. */
+export function bestTip(m, rules = DEFAULT_RULES, only = null) {
   let best = null;
-  for (let h = 0; h <= 5; h++) {
-    for (let a = 0; a <= 5; a++) {
-      const ep = expectedPoints(m, [h, a], rules);
-      if (!best || ep > best.ep + 1e-9) best = { h, a, ep };
-    }
+  const list = only?.length ? only.map((t) => [t.h, t.a]) : Array.from({ length: 36 }, (_, i) => [Math.floor(i / 6), i % 6]);
+  for (const [h, a] of list) {
+    const ep = expectedPoints(m, [h, a], rules);
+    if (!best || ep > best.ep + 1e-9) best = { h, a, ep };
   }
   return best;
 }
@@ -360,14 +394,20 @@ export function topScores(m, n = 3) {
   return all.sort((x, y) => y.p - x.p).slice(0, n);
 }
 
-/** Modell eines Spiels: aus Quoten, sonst aus der Form. */
-export function modelFor(match, homeStats, awayStats, rules = DEFAULT_RULES) {
-  const source = match.odds ? 'odds' : homeStats?.[5] && awayStats?.[5] ? 'form' : null;
+/**
+ * Modell eines Spiels: aus Quoten, sonst aus der KI-Einschätzung (kennt Kader und Klasse),
+ * sonst aus der Form samt Klassenunterschied.
+ */
+export function modelFor(match, homeStats, awayStats, rules = DEFAULT_RULES, { tiers = {}, ai = null } = {}) {
+  const gap = tiers.home != null && tiers.away != null && tiers.home !== tiers.away;
+  const source = match.odds ? 'odds' : ai?.tips?.length ? 'ai' : (homeStats?.[5] && awayStats?.[5]) || gap ? 'form' : null;
   if (!source) return null;
-  const { lh, la } = source === 'odds' ? fitLambdas(match.odds) : lambdasFromForm(homeStats, awayStats);
+  const { lh, la } = source === 'odds' ? fitLambdas(match.odds) : source === 'ai' ? fitScores(ai.tips) : lambdasFromForm(homeStats, awayStats, tiers);
   const m = scoreMatrix(lh, la);
   const o = outcomeOf(m);
-  return { source, lh, la, home: o.home, draw: o.draw, away: o.away, top: topScores(m, 3), tip: bestTip(m, rules) };
+  // Aus der KI-Einschätzung wird nur unter den von ihr genannten Ergebnissen gewählt.
+  const only = source === 'ai' ? ai.tips.map((t) => ({ h: t.h, a: t.a })) : null;
+  return { source, lh, la, only, home: o.home, draw: o.draw, away: o.away, top: topScores(m, 3), tip: bestTip(m, rules, only) };
 }
 
 // ---------------------------------------------------------------- Anzeige

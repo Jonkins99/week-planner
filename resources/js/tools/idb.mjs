@@ -41,16 +41,21 @@ export const idbSet = (store, key, value) => run(store, 'readwrite', (s) => s.pu
 export const idbDel = (store, key) => run(store, 'readwrite', (s) => s.delete(key)).catch(() => {});
 export const idbKeys = (store) => run(store, 'readonly', (s) => s.getAllKeys()).catch(() => []);
 
-/** Alle Einträge der Inbox holen und leeren (in einem Rutsch). */
-export async function drainInbox() {
+/** Einträge der Inbox holen und entfernen (in einem Rutsch); `match` wählt aus, was dem Werkzeug gehört. */
+export async function drainInbox(match = () => true) {
   try {
     const db = await open();
     return await new Promise((resolve, reject) => {
       const t = db.transaction('inbox', 'readwrite');
-      const s = t.objectStore('inbox');
-      const req = s.getAll();
-      req.onsuccess = () => s.clear();
-      t.oncomplete = () => resolve(req.result || []);
+      const out = [];
+      const req = t.objectStore('inbox').openCursor();
+      req.onsuccess = () => {
+        const cur = req.result;
+        if (!cur) return;
+        if (match(cur.value)) { out.push(cur.value); cur.delete(); }
+        cur.continue();
+      };
+      t.oncomplete = () => resolve(out);
       t.onerror = () => reject(t.error);
     });
   } catch {

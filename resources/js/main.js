@@ -11,7 +11,7 @@ import { periodOf, shiftPeriod, computeStats, compareStats, firstSeen, fmtEuro, 
 import { NUTRI_SYSTEM, NUTRI_SCHEMA, nutriModels, periodDishes, nutriSignature, nutriPrompt, readNutrition, acceptNutrition } from './nutrition-ai.mjs';
 import { renderWrappedImage } from './wrapped-image.mjs';
 import { BOOKS, SKIPS, SLEEP_OPTIONS, MARK_AFTER_MS, eveningKey, markDue, advance, seekAcross, scrubFactor, fmtClock } from './hp.mjs';
-import { loadLibrary, saveHandles, copyFiles, removeBook, trackFile, canPickHandles } from './hp-store.mjs';
+import { loadLibrary, saveHandles, copyFiles, removeBook, trackFile, canPickHandles, needsPrompt, adoptHandles } from './hp-store.mjs';
 import { isoDate, mondayOf, addDays, weekDays, isoWeek, rangeLabel, yearOfWeek, WEEKDAYS, WEEKDAYS_SHORT, dayMonth, weekdayIndex } from './dates.mjs';
 import { search, normalize } from './search.mjs';
 import { weekText } from './whatsapp.mjs';
@@ -34,6 +34,8 @@ import {
 import { registerAqua } from './tools/aqua-app.mjs';
 import { registerSorter } from './tools/sorter-app.mjs';
 import { registerKick } from './tools/kick-app.mjs';
+import { registerTodo } from './tools/todo-app.mjs';
+import { registerXmas } from './tools/xmas-app.mjs';
 import { loadData, saveData, flushData, readJson, writeJson, UI_KEY, GEMINI_KEY, QUOTA_KEY } from './storage.mjs';
 
 const TABS = [
@@ -107,6 +109,58 @@ const recipeIndex = new WeakMap();
 // reaktiven Zustand, und das Abspielen soll unabhängig von jeder Ansicht weiterlaufen.
 let hpAudio = null;
 let hpUrl = '';
+const hpCovers = new Map();
+
+// Vorschaubild für die Medien-Benachrichtigung im Look der Werkzeug-Kachel (Weinrot, Gold,
+// Blitz, Band-Nummer). Ohne eigenes Bild nähme Android das verpixelte App-Icon.
+async function hpCover(book) {
+  if (hpCovers.has(book.no)) return hpCovers.get(book.no);
+  const size = 512;
+  try {
+    await Promise.all([document.fonts.load('700 120px "Cinzel Decorative"'), document.fonts.load('italic 40px "IM Fell English"')]);
+  } catch { /* dann eben Ersatzschrift */ }
+  const c = document.createElement('canvas');
+  c.width = size;
+  c.height = size;
+  const g = c.getContext('2d');
+  const bg = g.createLinearGradient(0, 0, size * 0.55, size);
+  bg.addColorStop(0, '#1a0d24');
+  bg.addColorStop(0.55, '#4a0b18');
+  bg.addColorStop(1, '#6e0f1c');
+  g.fillStyle = bg;
+  g.fillRect(0, 0, size, size);
+  const glow = g.createRadialGradient(size * 0.8, 0, 0, size * 0.8, 0, size * 0.75);
+  glow.addColorStop(0, 'rgb(212 167 60 / 0.35)');
+  glow.addColorStop(1, 'rgb(212 167 60 / 0)');
+  g.fillStyle = glow;
+  g.fillRect(0, 0, size, size);
+  g.strokeStyle = 'rgb(212 167 60 / 0.7)';
+  g.lineWidth = 6;
+  g.strokeRect(18, 18, size - 36, size - 36);
+  g.strokeStyle = 'rgb(212 167 60 / 0.35)';
+  g.lineWidth = 2;
+  g.strokeRect(32, 32, size - 64, size - 64);
+  g.save();
+  g.translate(size / 2 - 60, 70);
+  g.scale(3, 3);
+  g.shadowColor = 'rgb(241 210 122 / 0.8)';
+  g.shadowBlur = 12;
+  g.fillStyle = '#e7c160';
+  g.fill(new Path2D('M24 2 8 42h12L12 78l22-46H21L30 2Z'));
+  g.restore();
+  g.textAlign = 'center';
+  g.fillStyle = '#f1d27a';
+  g.shadowColor = 'rgb(0 0 0 / 0.5)';
+  g.shadowBlur = 16;
+  g.font = '700 112px "Cinzel Decorative", Georgia, serif';
+  g.fillText(book.roman, size / 2, 410);
+  g.font = 'italic 38px "IM Fell English", Georgia, serif';
+  g.fillStyle = '#efe2c4';
+  g.fillText('Harry Potter', size / 2, 462);
+  const url = c.toDataURL('image/png');
+  hpCovers.set(book.no, url);
+  return url;
+}
 
 // Ansichtswechsel mit View Transition API; ohne Unterstützung einfach direkt.
 function viewTransition(update, dir = 'none') {
@@ -2489,21 +2543,30 @@ Alpine.data('app', () => ({
 
   hpMediaState() {
     if (!('mediaSession' in navigator)) return;
-    try {
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: this.hpTrackName || this.hpBook.title,
-        artist: `Harry Potter ${this.hpBook.roman}`,
-        album: `Harry Potter und ${this.hpBook.title.replace(/^Der |^Die |^Das /, (m) => m.toLowerCase())}`,
-      });
-      navigator.mediaSession.playbackState = this.hp.playing ? 'playing' : 'paused';
-    } catch { /* egal */ }
+    const book = this.hpBook;
+    const set = (cover) => {
+      try {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: this.hpTrackName || book.title,
+          artist: `Harry Potter ${book.roman}`,
+          album: `Harry Potter und ${book.title.replace(/^Der |^Die |^Das /, (m) => m.toLowerCase())}`,
+          artwork: cover ? [{ src: cover, sizes: '512x512', type: 'image/png' }] : [],
+        });
+        navigator.mediaSession.playbackState = this.hp.playing ? 'playing' : 'paused';
+      } catch { /* egal */ }
+    };
+    const ready = hpCovers.get(book.no);
+    set(ready);
+    if (!ready) hpCover(book).then((url) => { if (this.hpBook.no === book.no) set(url); }).catch(() => {});
   },
 
   async hpLoad(pos, autoplay) {
     const a = this.hpEnsureAudio();
     this.hp.error = '';
     try {
+      const asked = await needsPrompt(this.hp.lib, pos.book);
       const file = await trackFile(this.hp.lib, pos.book, pos.track);
+      if (asked) this.hpAdopt(pos.book);
       if (hpUrl) URL.revokeObjectURL(hpUrl);
       hpUrl = URL.createObjectURL(file);
       this.hp.pos = { ...pos };
@@ -2523,6 +2586,21 @@ Alpine.data('app', () => ({
       this.hp.loaded = false;
       this.hp.playing = false;
       this.hp.error = e?.name === 'NotAllowedError' ? 'Zum Abspielen bitte noch einmal tippen.' : e?.message || 'Die Datei konnte nicht geladen werden.';
+    }
+  },
+
+  // Der Browser hat nach Zugriff gefragt: Band still in den App-Speicher übernehmen,
+  // damit die Frage beim nächsten Öffnen entfällt.
+  async hpAdopt(no) {
+    if (this._hpAdopting) return;
+    this._hpAdopting = true;
+    try {
+      if (await adoptHandles(this.hp.lib, no)) {
+        this.hp.lib = await loadLibrary();
+        this.notify(`Band ${BOOKS[no - 1].roman} liegt jetzt im App-Speicher – keine Zugriffsfrage mehr.`, { tone: 'ok' });
+      }
+    } catch { /* bleibt bei den Dateigriffen */ } finally {
+      this._hpAdopting = false;
     }
   },
 
@@ -2742,6 +2820,8 @@ Alpine.data('app', () => ({
 registerAqua(Alpine);
 registerSorter(Alpine);
 registerKick(Alpine);
+registerTodo(Alpine);
+registerXmas(Alpine);
 
 window.Alpine = Alpine;
 Alpine.start();

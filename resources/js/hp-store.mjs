@@ -1,8 +1,9 @@
 // Ablage der Hörbuch-Dateien. Einmal ausgewählt, bleiben sie dauerhaft verfügbar:
-// - Wo der Browser Dateigriffe kennt (File System Access), merkt sich die App nur den
-//   Ort der Dateien; nach einem Neustart fragt der Browser höchstens einmal nach Zugriff.
-// - Sonst (z. B. Chrome auf Android) wird jede Datei einmalig in den privaten Speicher
-//   der App kopiert (Origin Private File System) und von dort abgespielt.
+// - Am Rechner (File System Access) merkt sich die App nur den Ort der Dateien; nach einem
+//   Neustart fragt der Browser höchstens einmal nach Zugriff.
+// - Auf dem Handy wird jede Datei einmalig in den privaten Speicher der App kopiert (Origin
+//   Private File System) und von dort abgespielt – dann fragt der Browser nie wieder.
+//   Früher gemerkte Dateigriffe werden nach der nächsten Freigabe still dorthin übernommen.
 // Die Liste der Bände liegt in IndexedDB (Datenbank `wp-hp`).
 
 import { sortTracks } from './hp.mjs';
@@ -29,7 +30,8 @@ async function tx(mode, fn) {
   });
 }
 
-export const canPickHandles = () => typeof window !== 'undefined' && typeof window.showOpenFilePicker === 'function';
+const isMobile = () => navigator.userAgentData?.mobile ?? /Android|iPhone|iPad/i.test(navigator.userAgent);
+export const canPickHandles = () => typeof window !== 'undefined' && typeof window.showOpenFilePicker === 'function' && !isMobile();
 export const canCopy = () => !!navigator.storage?.getDirectory;
 
 /** Alle Bände: { [book]: { book, mode, tracks: [{ name, size }] } } (ohne Dateigriffe). */
@@ -112,6 +114,51 @@ export async function trackFile(library, book, track) {
   }
   const dir = await bookDir(book, false);
   return (await dir.getFileHandle(t.stored)).getFile();
+}
+
+/** Muss der Browser für diesen Band (gemerkte Dateigriffe) erst wieder nach Zugriff fragen? */
+export async function needsPrompt(library, book) {
+  const entry = library[book];
+  if (entry?.mode !== 'handle') return false;
+  try { return (await entry.tracks[0]?.handle?.queryPermission?.({ mode: 'read' })) !== 'granted'; } catch { return false; }
+}
+
+/**
+ * Gemerkte Dateigriffe in den App-Speicher übernehmen, damit der Browser nie wieder fragt
+ * (Chrome auf Android merkt sich den Zugriff nicht über einen Neustart hinaus). Der Zugriff
+ * muss in dieser Sitzung schon erteilt sein. Ohne genug Platz bleibt alles, wie es ist.
+ */
+export async function adoptHandles(library, book, onProgress = () => {}) {
+  const entry = library[book];
+  if (entry?.mode !== 'handle' || !canCopy()) return false;
+  const total = entry.tracks.reduce((n, t) => n + (t.size || 0), 0) || 1;
+  const info = await storageInfo();
+  if (info?.quota && info.quota - info.usage < total * 1.15) return false;
+  try { await navigator.storage.persist?.(); } catch { /* nur Bitte */ }
+  try {
+    const root = await navigator.storage.getDirectory();
+    await (await root.getDirectoryHandle('hp', { create: true })).removeEntry(`band-${book}`, { recursive: true });
+  } catch { /* gab es nicht */ }
+  const dir = await bookDir(book);
+  const tracks = [];
+  let done = 0;
+  try {
+    for (const [i, t] of entry.tracks.entries()) {
+      const f = await t.handle.getFile();
+      const name = `${String(i + 1).padStart(3, '0')}-${t.name}`.replace(/[\\/:*?"<>|]/g, '_');
+      const w = await (await dir.getFileHandle(name, { create: true })).createWritable();
+      await w.write(f);
+      await w.close();
+      done += f.size;
+      onProgress(done / total, i + 1, entry.tracks.length);
+      tracks.push({ name: t.name, size: f.size, stored: name });
+    }
+  } catch (e) {
+    try { await (await (await navigator.storage.getDirectory()).getDirectoryHandle('hp')).removeEntry(`band-${book}`, { recursive: true }); } catch { /* egal */ }
+    throw e;
+  }
+  await tx('readwrite', (s) => s.put({ book, mode: 'opfs', tracks }));
+  return true;
 }
 
 /** Speicherplatz (für den Hinweis in den Einstellungen). */
