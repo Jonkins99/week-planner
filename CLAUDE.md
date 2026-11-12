@@ -1,13 +1,4 @@
-== Grundlegendes ==
 
-In diesem Projekt ist die Nutzung von Git verboten! Die hier gemachten Änderungen an Dateien werden nirgendwo hincomittet oder gepushed. Stattdessen wird am Ende eines jeden Update-Prozesses eine .zip Datei im Root-Verzeichnis erzeugt, die hochzählt (week-planner-1.zip, week-planner-2.zip etc.). Diese Datei wird auf einen anderen Laptop übertragen, um den Stand ebenfalls dort zu haben. Wie gesagt aber auf jeden Fall komplett ohne Nutzung von Git oder anderen externen Services, um die Übertragung kümmere ich mich manuell.
-
-Auch die Kommunikation zwischen Claude und dem Nutzer über das Claude Terminal ist absolut VERBOTEN! Es sollen keine Nachrichten von dir im Terminal erscheinen! Kommuniziert wird ausschließlich über die Datei task.md. Dort steht stets der aktuelle Arbeitsauftrag drin und ans Ende der Datei dürfen dabei auch Rückfragen gestellt oder wichtige Dinge kommuniziert werden.
-
-Nutze keine Agents oder Sub-Agents, erledige alles direkt in der Session.
-
-Besagter anderer Laptop (UND AUSSCHLIEßLICH JENER!) bringt das Projekt dann nach GitHub, wo es mithilfe von GitHub Pages live gestellt werden. Am Ende einer Aufgabe sollst du daher immer in der task.md vermerken welche Konsolenbefehle ich auf dem anderen Laptop durchführen muss (also zB ein npm run build). Deployed werden soll aus dem docs/ Ordner heraus, wie oft bei GitHub Pages üblich.
-== Projekt ==
 
 „Week Planner": private, mobil-first Web-App (PWA, auf Android installierbar) für Elika und Janik. Fünf Reiter in fester Fußleiste: Wochenplan, Einkauf, Rezepte, Vorrat, Werkzeuge (großes Plus). Jeder Reiter behält beim Wechsel seinen Zustand (Ansichten bleiben gemountet, nur unsichtbar; Scroll-Position, Woche, Suche, Sortierung und offenes Rezept werden zusätzlich in localStorage gemerkt). UI-Texte und Code-Kommentare auf Deutsch. Design-Vorgaben: DESIGN.md (Emaille-Geschirr-Welt), Produktkontext: PRODUCT.md. Für Design-Arbeit die /impeccable-Skills nutzen.
 
@@ -60,7 +51,7 @@ Fachliches:
   - Installation: Chrome/Android erlaubt pro Origin praktisch nur eine Web-App (alles unter <name>.github.io gilt als dieselbe Herkunft). Sicher getrennt nur über einen eigenen Origin (z. B. eigene GitHub-Organisation → <org>.github.io). Der Code ist dank `base: './'` origin-unabhängig.
   - Übernommene Einkaufsposten aus dem Altbestand werden nicht als Produkte gemerkt (`keep: false`); bestehende Stände wurden einmalig bereinigt (Flag shopping.flags.seedCatalogCleared).
 
-Abschluss jeder Aufgabe: npm test + npm run build, dann ZIP week-planner-<n>.zip im Root (ohne node_modules, .idea, ältere ZIPs; ab week-planner-2.zip nur die seit der letzten ZIP geänderten Dateien inkl. geänderter docs/-Dateien, Pfade relativ zum Projekt-Root) und in task.md vermerken, welche Befehle auf dem anderen Laptop nötig sind.
+Abschluss jeder Aufgabe: npm test + npm run build.
   - Rest von gestern: Mittag-Eintrag `leftover: true` zeigt live das Abendessen des Vortags (Knopf im leeren Mittag-Slot). Bestellt: Eintrag `order: { rid, amount, instead }` (Restaurant aus state.restaurants, Betrag, ursprüngliches Gericht); nur Abendessen heute/vergangen, über Icon im Eintragen-Blatt oder Kontextmenü. Altbestand „Bestellen" als Freitext zählt in der Statistik als Bestellung (`isOrder`).
   - Abendessen-Vorschläge (Glühbirne im leeren Abend-Slot): 10 Gerichte, gewichtet nach Bewertung und „lange nicht gegessen", kürzlich gezeigte treten zurück (`wp-suggest-v1`). Freitext nur ab 3× und ohne ähnliches Rezept.
   - Statistik (Wochenplan-Menü ☰ → Statistiken): Woche/Monat/Jahr, gezählt bis heute. Rückblick („Wrapped") öffnet einmalig beim ersten Start nach Monatswechsel (im Januar zusätzlich das Jahr), gemerkt in `wp-wrapped-v1`; Teilen als PNG ohne Nährwerte. Nährwerte werden je Zeitraum in `wp-nutrition-v1` gemerkt.

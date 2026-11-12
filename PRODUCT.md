@@ -2,7 +2,7 @@
 
 <!-- impeccable:product-schema 1 -->
 
-> Hinweis: Ein Interview war nicht möglich (Kommunikation ausschließlich über `task.md`). Alle mit *(abgeleitet)* markierten Punkte stammen aus dem Auftrag in `task.md` und dem Backup der Vorgänger-App, nicht aus einer Bestätigung.
+> Hinweis: Ein Interview war nicht möglich. Alle mit *(abgeleitet)* markierten Punkte stammen aus dem ursprünglichen Auftrag und dem Backup der Vorgänger-App, nicht aus einer Bestätigung.
 
 ## Platform
 
@@ -35,7 +35,6 @@ Kein Rezeptportal, sondern das private Küchenbuch eines Haushalts: zwei Bewertu
 
 - Fünf Hauptreiter in fester Fußleiste: Wochenplan, Einkauf, Rezepte, Vorrat und Werkzeuge (Helfer abseits der Küche, z. B. Harry-Potter-Hörbücher). Jeder Reiter behält seinen Zustand beim Wechsel.
 - Daten liegen gerätelokal (localStorage), Gemini-API-Schlüssel ebenfalls. Kein Backend.
-- Kein Git auf dem Entwicklungsrechner; Übergabe per hochzählender ZIP.
 
 ## Brand Commitments
 

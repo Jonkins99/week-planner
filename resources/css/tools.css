@@ -5120,7 +5120,7 @@
 
 .xm-doors {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(138px, 1fr));
+  grid-template-columns: 1fr;
   gap: 10px;
   margin: 0;
   padding: 0;
