@@ -78,3 +78,26 @@ export function readKick(data, ids = null) {
 }
 
 export const acceptKick = (ids) => (data) => Object.keys(readKick(data, ids)).length >= Math.ceil(ids.length / 2);
+
+// ------------------------------------------------------------------ Gemerkte Einschätzungen
+// Eine Einschätzung wird je Spiel genau einmal geholt und bleibt bis nach dem Spiel liegen
+// (`kick` = Anstoß). Spiele, die in einer Antwort fehlten, werden frühestens nach RETRY erneut
+// angefragt, damit der 5-Minuten-Takt nicht jedes Mal Gemini weckt.
+
+const DAY = 86400000;
+export const KICK_RETRY = 6 * 3600000;
+
+/** Welche Karten brauchen noch eine KI-Einschätzung? `force` übergeht die Wartezeit. */
+export function kickAiTodo(cards, data, now = Date.now(), force = false) {
+  return cards.filter((c) => c.state === 'pre' && !data.ai?.[c.id]
+    && (force || !data.aiTry?.[c.id] || now - data.aiTry[c.id] > KICK_RETRY));
+}
+
+/** Abgelaufene Einschätzungen und Fehlversuche entfernen (verändert `data`). */
+export function pruneKickAi(data, now = Date.now()) {
+  for (const [k, v] of Object.entries(data.ai || {})) {
+    if (v?.kick ? now > v.kick + DAY : now - (v?.at || 0) > 7 * DAY) delete data.ai[k];
+  }
+  for (const [k, t] of Object.entries(data.aiTry || {})) if (now - t > DAY) delete data.aiTry[k];
+  return data;
+}

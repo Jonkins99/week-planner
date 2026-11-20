@@ -32,7 +32,7 @@ import {
   americanToProb, readOdds, readEvent, readSchedule, goalStats, domesticLeague, readStandings, positionsFor, fitLambdas,
   scoreMatrix, outcomeOf, pointsFor as kickPoints, bestTip, matchWindow, deName, LEAGUES, modelFor, tierOf,
 } from '../resources/js/tools/kick.mjs';
-import { readKick, acceptKick } from '../resources/js/tools/kick-ai.mjs';
+import { readKick, acceptKick, kickAiTodo, pruneKickAi, KICK_RETRY } from '../resources/js/tools/kick-ai.mjs';
 import { parseCron, cronNext, presetCron, buildRepeat, completeTodo, sanitizeTodo, addTodo, emptyTodo, upcomingTodo, dueTodo, openTodos } from '../resources/js/tools/todo.mjs';
 import { readCron } from '../resources/js/tools/todo-ai.mjs';
 import { emptyXmas, sanitizeXmas, moveGift, nextStatus, ADVENT_FLOW, GIFT_FLOW, tally, adventToday } from '../resources/js/tools/xmas.mjs';
@@ -597,6 +597,25 @@ test('Kicktipp: KI-Antwort säubern', () => {
   assert.deepEqual(r['11'].tips, [{ h: 2, a: 1, pct: 15 }, { h: 1, a: 1, pct: 12 }, { h: 0, a: 0, pct: 8 }]);
   assert.equal(acceptKick(['11', '12'])(data), true);
   assert.equal(acceptKick(['11', '12', '13'])(data), false);
+});
+
+test('Kicktipp: KI-Einschätzung je Spiel nur einmal, gemerkt bis nach dem Spiel', () => {
+  const now = Date.UTC(2026, 10, 20, 12);
+  const day = 86400000;
+  const cards = [{ id: 'a', state: 'pre' }, { id: 'b', state: 'pre' }, { id: 'c', state: 'pre' }, { id: 'd', state: 'post' }];
+  const data = {
+    ai: { a: { tips: [], at: now - 3 * day, kick: now + day } },
+    aiTry: { b: now - 60000, c: now - KICK_RETRY - 1 },
+  };
+  // a ist geschätzt (auch nach Tagen nicht neu), b gerade erfolglos versucht, d vorbei
+  assert.deepEqual(kickAiTodo(cards, data, now).map((c) => c.id), ['c']);
+  assert.deepEqual(kickAiTodo(cards, data, now, true).map((c) => c.id), ['b', 'c']);
+  const p = pruneKickAi({
+    ai: { a: { at: now - 5 * day, kick: now + 3600000 }, b: { at: now - 3 * day, kick: now - 2 * day }, old: { at: now - 8 * day } },
+    aiTry: { x: now - 2 * day, y: now - 1000 },
+  }, now);
+  assert.deepEqual(Object.keys(p.ai), ['a']);
+  assert.deepEqual(Object.keys(p.aiTry), ['y']);
 });
 
 test('Kicktipp: Spielklasse und KI im Modell ohne Quoten', () => {

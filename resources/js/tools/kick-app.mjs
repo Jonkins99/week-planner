@@ -8,7 +8,7 @@ import {
   LEAGUES, DEFAULT_RULES, espn, matchWindow, readScoreboard, readSchedule, mergeGames, domesticLeague, goalStats,
   readStandings, positionsFor, modelFor, scoreMatrix, bestTip, compLabel, isLeagueSlug, fmtAvg, pct, tierOf,
 } from './kick.mjs';
-import { KICK_SYSTEM, KICK_SCHEMA, KICK_BATCH, kickModels, kickPrompt, readKick, acceptKick } from './kick-ai.mjs';
+import { KICK_SYSTEM, KICK_SCHEMA, KICK_BATCH, kickModels, kickPrompt, readKick, acceptKick, kickAiTodo, pruneKickAi } from './kick-ai.mjs';
 import { generateJson, QuotaBook, normalizeKeys } from '../gemini.mjs';
 import { readJson, writeJson, GEMINI_KEY, QUOTA_KEY } from '../storage.mjs';
 
@@ -17,7 +17,9 @@ const CACHE = 'wp-kick-cache-v1';
 const DAYS = 3;
 const MIN = 60000;
 const HOUR = 3600000;
-const TTL = { today: 5 * MIN, day: 60 * MIN, team: 6 * HOUR, table: 3 * HOUR, ai: 12 * HOUR };
+const TTL = { today: 5 * MIN, day: 60 * MIN, team: 6 * HOUR, table: 3 * HOUR };
+// Nach einem komplett gescheiterten KI-Lauf (alle Schlüssel/Modelle) so lange Pause.
+const AI_PAUSE = 30 * MIN;
 
 const quota = new QuotaBook({ load: () => readJson(QUOTA_KEY, {}), save: (v) => writeJson(QUOTA_KEY, v) });
 const geminiKeys = () => normalizeKeys(readJson(GEMINI_KEY, {})?.keys || []);
@@ -50,7 +52,9 @@ async function pool(items, size, fn) {
   await Promise.all(Array.from({ length: Math.min(size, items.length) }, worker));
 }
 
-const emptyData = () => ({ done: {}, ai: {}, rules: { ...DEFAULT_RULES }, collapsed: {} });
+// ai: { [Spiel-id]: { tips, note, at, kick (Anstoß), model } }, aiTry: { [id]: Zeitpunkt des letzten erfolglosen Versuchs },
+// aiFail: Zeitpunkt des letzten komplett gescheiterten KI-Laufs.
+const emptyData = () => ({ done: {}, ai: {}, aiTry: {}, aiFail: 0, rules: { ...DEFAULT_RULES }, collapsed: {} });
 const emptyCache = () => ({ sb: {}, teams: {}, tables: {} });
 
 function sideOf(team, games, pos) {
@@ -85,7 +89,6 @@ export function registerKick(Alpine) {
     ktPeek: {},
     _ktCache: emptyCache(),
     _ktLoading: null,
-    _ktAiFailed: 0,
     _ktTimer: null,
 
     init() {
@@ -204,7 +207,8 @@ export function registerKick(Alpine) {
       for (const k of Object.keys(c.teams)) if (!ids.has(k) && Date.now() - c.teams[k].at > 3 * 86400000) delete c.teams[k];
       for (const k of Object.keys(c.tables)) if (!slugs.has(k) && Date.now() - c.tables[k].at > 3 * 86400000) delete c.tables[k];
       const live = new Set(this.ktMatches(win).map((m) => m.id));
-      for (const k of Object.keys(this.ktData.ai)) if (!live.has(k) && Date.now() - (this.ktData.ai[k].at || 0) > 7 * 86400000) delete this.ktData.ai[k];
+      pruneKickAi(this.ktData);
+      this.ktSave();
       for (const k of Object.keys(this.ktData.done)) if (!live.has(k) && Date.now() - this.ktData.done[k] > 14 * 86400000) delete this.ktData.done[k];
     },
 
@@ -337,17 +341,18 @@ export function registerKick(Alpine) {
       return geminiKeys().length > 0;
     },
 
-    ktAiTodo() {
-      const now = Date.now();
-      return this.ktCards.filter((c) => c.state === 'pre' && (!this.ktData.ai[c.id] || now - this.ktData.ai[c.id].at > TTL.ai));
+    // Nur Spiele ohne gemerkte Einschätzung; „Erneut“ (manual) übergeht Pause und Wartezeit,
+    // schätzt aber nie bereits geschätzte Spiele neu.
+    ktAiTodo(manual = false) {
+      return kickAiTodo(this.ktCards, this.ktData, Date.now(), manual);
     },
 
     async ktRunAi(manual = false) {
       if (this.ktAiBusy) return;
       const keys = geminiKeys();
       if (!keys.length) return;
-      if (!manual && Date.now() - this._ktAiFailed < 10 * MIN) return;
-      const todo = manual ? this.ktCards.filter((c) => c.state === 'pre') : this.ktAiTodo();
+      if (!manual && Date.now() - (this.ktData.aiFail || 0) < AI_PAUSE) return;
+      const todo = this.ktAiTodo(manual);
       if (!todo.length) return;
       this.ktAiBusy = true;
       this.ktAiError = '';
@@ -372,13 +377,19 @@ export function registerKick(Alpine) {
           });
           const got = readKick(data, ids);
           const ai = { ...this.ktData.ai };
-          for (const [id, v] of Object.entries(got)) ai[id] = { ...v, at: Date.now(), model: used };
+          const tried = { ...this.ktData.aiTry };
+          for (const c of part) {
+            const v = got[c.id];
+            if (v) { ai[c.id] = { ...v, at: Date.now(), kick: c.at, model: used }; delete tried[c.id]; } else tried[c.id] = Date.now();
+          }
           this.ktData.ai = ai;
-          this.ktSave();
+          this.ktData.aiTry = tried;
+          writeJson(DATA, this.ktData);
           this.ktBuild();
         }
       } catch (e) {
-        this._ktAiFailed = Date.now();
+        this.ktData.aiFail = Date.now();
+        this.ktSave();
         this.ktAiError = e?.message || 'Die KI hat gerade keine Antwort.';
       } finally {
         this.ktAiBusy = false;
